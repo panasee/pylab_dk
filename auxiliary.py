@@ -1,6 +1,6 @@
 import re
 import math
-from common.file_organizer import FileOrganizer
+from pylab_dk.file_organizer import FileOrganizer
 
 
 class Flakes:

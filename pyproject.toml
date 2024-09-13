@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pylab_dk"
+version = "1.0a1"
+description = "Integrated Tools for Electronic, Cryogenic and Magnetic Measurements"
+authors = [{name="Dongkai", email="dongkai001@e.ntu.edu.sg"}]
+readme = "README.md"
+license = {text = "MIT License"}
+requires-python = ">=3.11"
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Programming Language :: Python",
+  "intended Audience :: Science/Research"
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "plotly",
+    "pandas",
+    "json",
+    "pyvisa",
+    "pymeasure>=0.14.0",
+    "qcodes>=0.47.0"
+]
+
+[project.optional-dependencies]
+jupyter = ["jupyter"]

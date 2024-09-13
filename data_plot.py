@@ -15,10 +15,10 @@ from plotly.subplots import make_subplots
 import numpy as np
 import pandas as pd
 
-from common.file_organizer import FileOrganizer, script_base_dir
-import common.pltconfig.color_preset as colors
-from common.constants import cm_to_inch, factor, default_plot_dict, is_notebook
-from common.data_process import DataProcess
+from pylab_dk.file_organizer import FileOrganizer, script_base_dir
+import pylab_dk.pltconfig.color_preset as colors
+from pylab_dk.constants import cm_to_inch, factor, default_plot_dict, is_notebook
+from pylab_dk.data_process import DataProcess
 
 
 class DataPlot(DataProcess):
@@ -284,7 +284,7 @@ class DataPlot(DataProcess):
     @staticmethod
     def load_settings(usetex: bool = False, usepgf: bool = False) -> None:
         """load the settings for matplotlib saved in another file"""
-        file_name = "common.pltconfig.plot_config"
+        file_name = "pylab_dk.pltconfig.plot_config"
         if usetex:
             file_name += "_tex"
             if usepgf:

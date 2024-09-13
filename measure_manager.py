@@ -16,12 +16,12 @@ import pandas as pd
 from pathlib import Path
 import re
 # import qcodes as qc
-from common.MercuryiPS_VISA import OxfordMercuryiPS
-from common.file_organizer import print_help_if_needed, FileOrganizer
-from common.data_plot import DataPlot
-from common.constants import convert_unit, print_progress_bar, gen_seq, constant_generator, \
+from pylab_dk.MercuryiPS_VISA import OxfordMercuryiPS
+from pylab_dk.file_organizer import print_help_if_needed, FileOrganizer
+from pylab_dk.data_plot import DataPlot
+from pylab_dk.constants import convert_unit, print_progress_bar, gen_seq, constant_generator, \
     combined_generator_list
-from common.equip_wrapper import ITC, ITCs, ITCMercury, WrapperSR830, Wrapper2400, Wrapper6430, Wrapper2182, \
+from pylab_dk.equip_wrapper import ITC, ITCs, ITCMercury, WrapperSR830, Wrapper2400, Wrapper6430, Wrapper2182, \
     Wrapper6221, Meter, SourceMeter
 
 

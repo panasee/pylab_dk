@@ -16,11 +16,7 @@ from typing import Literal
 from itertools import islice
 import shutil
 import re
-
-# set the workpath to the parent directory of the file "script-tools/" also preserve it as a global variable
-script_base_dir: Path = Path(__file__).resolve().parents[1]
-today = datetime.date.today()
-os.chdir(script_base_dir)
+from pylab_dk import LOCAL_DB_PATH, OUT_DB_PATH, set_paths
 
 
 def print_help_if_needed(func: callable) -> callable:
@@ -39,27 +35,41 @@ def print_help_if_needed(func: callable) -> callable:
 class FileOrganizer:
     """A class to manage file and directory operations."""
 
-    # define static variables to store the file paths
-    local_database_dir = script_base_dir / "data_files"
-    out_database_dir: Path = None  # defined in out_database method(static)
-    trash_dir: Path = None  # defined in out_database method(static)
+    # the None value is only to avoid the error when the class is imported
+    # the value must be set before the class is used
+    # in all methods and properties, they are assumed to be SET and not None
+    _local_database_dir = Path(LOCAL_DB_PATH) if LOCAL_DB_PATH is not None else None
+    _out_database_dir = Path(OUT_DB_PATH) if OUT_DB_PATH is not None else None
+    _trash_dir = _out_database_dir / "trash" if _out_database_dir is not None else None
+
     # load the json files to dicts for storing important records information note that the dicts are static variables
     # created with the definition of the class and shared by all instances of the class and keep changing
-    measure_types_json: dict
-    """the changes should ALWAYS be synced RIGHT AFTER EVERY CHANGES"""
-    proj_rec_json: dict
-    """the changes should ALWAYS be synced RIGHT AFTER EVERY CHANGES"""
-    third_party_json: dict
+    # default to None to avoid the error when the class is imported, also for judging whether is the first instance
+    # they are a must part for the class to work
+    measure_types_json: dict = None
+    """the changes should ALWAYS be synced RIGHT AFTER EVERY CHANGE"""
+    proj_rec_json: dict = None
+    """the changes should ALWAYS be synced RIGHT AFTER EVERY CHANGE"""
+    # the third party related configs are optional
+    third_party_json: dict = None
     """used for specific reason, like wafers, positions, etc."""
-    third_party_location: Literal["local", "out"]
+    third_party_location: Literal["local", "out"] = None
     """used to indicate the location of the third party json file"""
+    third_party_name: str = None
+    """used to indicate the name of the third party json file"""
 
-    with open(local_database_dir / "measure_types.json", "r", encoding="utf-8") as __measure_type_file:
-        measure_types_json: dict = json.load(__measure_type_file)
+    @staticmethod
+    def reload_paths(*, local_db_path: str | Path = None, out_db_path: str | Path = None) -> None:
+        """reload the paths from the environment variables"""
+        set_paths(local_db_path=local_db_path, out_db_path=out_db_path)
+        FileOrganizer._local_database_dir = Path(LOCAL_DB_PATH) if LOCAL_DB_PATH is not None else None
+        FileOrganizer._out_database_dir = Path(OUT_DB_PATH) if OUT_DB_PATH is not None else None
+        FileOrganizer._trash_dir = FileOrganizer._out_database_dir / "trash" if FileOrganizer._out_database_dir is not None else None
 
     def __init__(self, proj_name: str, copy_from: str = None, special_mode=False) -> None:
         """
-        initialize the class with the project name and judge if the name is in the accepted project names. Only out_database_path is required, as the local_database_dir is attached with the base_dir
+        initialize the class with the project name and judge if the name is in the accepted project names. Only
+        out_database_path is required, as the local_database_dir is attached with the base_dir
 
         Args:
             proj_name: str
@@ -72,17 +82,39 @@ class FileOrganizer:
         elif platform.system().lower() == "linux":
             self.curr_sys = "linux"
 
-        if FileOrganizer.out_database_dir is None:
-            raise ValueError("The out_database_dir has not been set, please call the out_database_init method first.")
+        # prevent further operation if the local_database_dir or out_database_dir have not been set
+        if FileOrganizer._local_database_dir is None or FileOrganizer._out_database_dir is None:
+            raise ValueError("The database_dir(s) have not been set, please appoint a path first.")
         # defined vars for two databases of the project
-        self.out_database_dir_proj = FileOrganizer.out_database_dir / proj_name
+        self._out_database_dir_proj = FileOrganizer._out_database_dir / proj_name
         self.proj_name = proj_name
+        self.today = datetime.date.today()
+
+        # only load the measure_types_json once, then it will be shared by all instances
+        # so that the changes will be synced among instances to avoid conflicts
+        if FileOrganizer.measure_types_json is None:
+            with open(FileOrganizer._local_database_dir / "measure_types.json", "r",
+                      encoding="utf-8") as __measure_type_file:
+                FileOrganizer.measure_types_json = json.load(__measure_type_file)
+
+        # initialize the out database directory
+        # judge if is the first instance by proj_rec_json
+        if FileOrganizer.proj_rec_json is None:
+            FileOrganizer._out_database_dir.mkdir(parents=True, exist_ok=True)
+            FileOrganizer._trash_dir.mkdir(exist_ok=True)
+            if not (FileOrganizer._out_database_dir / "project_record.json").exists():
+                with open(FileOrganizer._out_database_dir / "project_record.json", "w",
+                          encoding="utf-8") as __proj_rec_file:
+                    json.dump({}, __proj_rec_file)
+            with open(FileOrganizer._out_database_dir / "project_record.json", "r",
+                      encoding="utf-8") as __proj_rec_file:
+                FileOrganizer.proj_rec_json = json.load(__proj_rec_file)
 
         # try to find the project in the record file, if not, then add a new item in record
         if proj_name not in FileOrganizer.proj_rec_json and copy_from is None:
             FileOrganizer.proj_rec_json[proj_name] = {
-                "created_date": today.strftime("%Y-%m-%d"),
-                "last_modified": today.strftime("%Y-%m-%d"),
+                "created_date": self.today.strftime("%Y-%m-%d"),
+                "last_modified": self.today.strftime("%Y-%m-%d"),
                 "measurements": [],
                 "plan": {}}
             print(f"{proj_name} is not found in the project record file, a new item has been added.")
@@ -92,29 +124,24 @@ class FileOrganizer:
                 print(f"{copy_from} is not found in the project record file, please check the name.")
                 return
             FileOrganizer.proj_rec_json[proj_name] = FileOrganizer.proj_rec_json[copy_from].copy()
-            FileOrganizer.proj_rec_json[proj_name]["created_date"] = today.strftime("%Y-%m-%d")
-            FileOrganizer.proj_rec_json[proj_name]["last_modified"] = today.strftime("%Y-%m-%d")
+            FileOrganizer.proj_rec_json[proj_name]["created_date"] = self.today.strftime("%Y-%m-%d")
+            FileOrganizer.proj_rec_json[proj_name]["last_modified"] = self.today.strftime("%Y-%m-%d")
             print(f"{proj_name} has been copied from {copy_from}.")
 
         # create project folder in the out database for storing main data
-        self.out_database_dir_proj.mkdir(exist_ok=True)
-        if not os.path.exists(self.out_database_dir_proj / "assist_post.ipynb"):
-            shutil.copy(FileOrganizer.local_database_dir / "assist.ipynb",
-                        self.out_database_dir_proj / "assist_post.ipynb")
-        if not os.path.exists(self.out_database_dir_proj / "assist_measure.ipynb"):
-            shutil.copy(FileOrganizer.local_database_dir / "assist.ipynb",
-                        self.out_database_dir_proj / "assist_measure.ipynb")
+        self._out_database_dir_proj.mkdir(exist_ok=True)
+        if not os.path.exists(self._out_database_dir_proj / "assist_post.ipynb"):
+            shutil.copy(FileOrganizer._local_database_dir / "assist.ipynb",
+                        self._out_database_dir_proj / "assist_post.ipynb")
+        if not os.path.exists(self._out_database_dir_proj / "assist_measure.ipynb"):
+            shutil.copy(FileOrganizer._local_database_dir / "assist.ipynb",
+                        self._out_database_dir_proj / "assist_measure.ipynb")
         # sync the project record file at the end of the function
         FileOrganizer._sync_json("proj_rec")
 
-    def __del__(self) -> None:
-        """Make sure the files are closed when the class is deleted."""
-        if not FileOrganizer.__measure_type_file.closed:
-            FileOrganizer.__measure_type_file.close()
-
     def open_proj_folder(self) -> None:
         """Open the project folder"""
-        FileOrganizer.open_folder(self.out_database_dir_proj)
+        FileOrganizer.open_folder(self._out_database_dir_proj)
 
     def get_filepath(self, measure_mods: tuple[str] | list[str], *var_tuple,
                      tmpfolder: str = None, plot: bool = False) -> Path:
@@ -137,13 +164,13 @@ class FileOrganizer:
             filename = FileOrganizer.filename_format(name_fstr, *var_tuple)
 
             if tmpfolder is not None:
-                filepath = self.out_database_dir_proj / measure_name / tmpfolder / filename
+                filepath = self._out_database_dir_proj / measure_name / tmpfolder / filename
                 if plot:
-                    filepath = self.out_database_dir_proj / "plot" / measure_name / tmpfolder / filename
+                    filepath = self._out_database_dir_proj / "plot" / measure_name / tmpfolder / filename
             else:
-                filepath = self.out_database_dir_proj / measure_name / filename
+                filepath = self._out_database_dir_proj / measure_name / filename
                 if plot:
-                    filepath = self.out_database_dir_proj / "plot" / measure_name / filename
+                    filepath = self._out_database_dir_proj / "plot" / measure_name / filename
             return filepath
 
         except Exception:
@@ -230,7 +257,8 @@ class FileOrganizer:
             other_dict["mainname"])
         mods_detail_dicts_lst = [mods_detail_dicts_lst[i] for i in
                                  source_dict["indexes"] + sense_dict["indexes"] + other_dict["indexes"]]
-        namestr = "-".join(source_dict["namestr"]) + "_" + "-".join(sense_dict["namestr"]) + "_" + "-".join(other_dict["namestr"])
+        namestr = "-".join(source_dict["namestr"]) + "_" + "-".join(sense_dict["namestr"]) + "_" + "-".join(
+            other_dict["namestr"])
         if require_detail:
             return mainname_str, namestr, mods_detail_dicts_lst
         else:
@@ -283,21 +311,6 @@ class FileOrganizer:
             print(f"Use terminal: {path}")
 
     @staticmethod
-    def out_database_init(out_database_path: str | Path) -> None:
-        """
-        Set the out_database_dir variable to the given path, should be called before any instances of the class are created
-        """
-        FileOrganizer.out_database_dir = Path(out_database_path)
-        FileOrganizer.out_database_dir.mkdir(parents=True, exist_ok=True)
-        FileOrganizer.trash_dir = FileOrganizer.out_database_dir / "trash"
-        FileOrganizer.trash_dir.mkdir(exist_ok=True)
-        if not (FileOrganizer.out_database_dir / "project_record.json").exists():
-            with open(FileOrganizer.out_database_dir / "project_record.json", "w", encoding="utf-8") as __proj_rec_file:
-                json.dump({}, __proj_rec_file)
-        with open(FileOrganizer.out_database_dir / "project_record.json", "r", encoding="utf-8") as __proj_rec_file:
-            FileOrganizer.proj_rec_json = json.load(__proj_rec_file)
-
-    @staticmethod
     def _sync_json(which_file: str) -> None:
         """
         sync the json dictionary with the file, should av
@@ -308,23 +321,24 @@ oid using this method directly, as the content of json may be uncontrolable
                 The file to be synced with, should be either "measure_type" or "proj_rec"
         """
         if which_file == "measure_type":
-            with open(FileOrganizer.local_database_dir / "measure_types.json", "w",
+            with open(FileOrganizer._local_database_dir / "measure_types.json", "w",
                       encoding="utf-8") as __measure_type_file:
                 json.dump(FileOrganizer.measure_types_json, __measure_type_file, indent=4)
         elif which_file == "proj_rec":
-            with open(FileOrganizer.out_database_dir / "project_record.json", "w", encoding="utf-8") as __proj_rec_file:
+            with open(FileOrganizer._out_database_dir / "project_record.json", "w",
+                      encoding="utf-8") as __proj_rec_file:
                 json.dump(FileOrganizer.proj_rec_json, __proj_rec_file, indent=4)
         elif isinstance(which_file, str):
             if FileOrganizer.third_party_location == "local":
-                with open(FileOrganizer.local_database_dir / f"{which_file}.json", "w",
+                with open(FileOrganizer._local_database_dir / f"{which_file}.json", "w",
                           encoding="utf-8") as __third_party_file:
                     json.dump(FileOrganizer.third_party_json, __third_party_file, indent=4)
             elif FileOrganizer.third_party_location == "out":
-                with open(FileOrganizer.out_database_dir / f"{which_file}.json", "w",
+                with open(FileOrganizer._out_database_dir / f"{which_file}.json", "w",
                           encoding="utf-8") as __third_party_file:
                     json.dump(FileOrganizer.third_party_json, __third_party_file, indent=4)
         else:
-            raise ValueError("The file name should be str.")
+            raise TypeError("The file name should be str.")
 
     def create_folder(self, folder_name: str) -> None:
         """
@@ -334,15 +348,15 @@ oid using this method directly, as the content of json may be uncontrolable
             folder_name: str
                 The name(relative path if not in the root folder) of the folder to be created
         """
-        (self.out_database_dir_proj / folder_name).mkdir(exist_ok=True)
+        (self._out_database_dir_proj / folder_name).mkdir(exist_ok=True)
 
     def add_measurement(self, *measure_mods) -> None:
         """
         Add a measurement to the project record file.
 
         Args:
-            measure_name: str
-                The name of the measurement(not with subcat) to be added, preferred to be one of current measurements, if not then use “add_measurement_type” to add a new measurement type first
+            measure_mods: Tuple[str]
+                The modules used in the measurement, e.g. "I_source_ac","V_sense","T_sweep"
         """
         measurename_main, name_str = FileOrganizer.name_fstr_gen(*measure_mods)
         # first add it into the project record file
@@ -350,7 +364,7 @@ oid using this method directly, as the content of json may be uncontrolable
             print(f"{measurename_main} is already in the project record file.")
             return
         FileOrganizer.proj_rec_json[self.proj_name]["measurements"].append(measurename_main)
-        FileOrganizer.proj_rec_json[self.proj_name]["last_modified"] = today.strftime("%Y-%m-%d")
+        FileOrganizer.proj_rec_json[self.proj_name]["last_modified"] = self.today.strftime("%Y-%m-%d")
         print(f"{measurename_main} has been added to the project record file.")
 
         # add the measurement folder if not exists
@@ -486,7 +500,7 @@ oid using this method directly, as the content of json may be uncontrolable
         del FileOrganizer.proj_rec_json[proj_name]
         FileOrganizer._sync_json("proj_rec")
         #move the project folder to the trash bin
-        shutil.move(FileOrganizer.out_database_dir / proj_name, FileOrganizer.trash_dir / proj_name)
+        shutil.move(FileOrganizer._out_database_dir / proj_name, FileOrganizer._trash_dir / proj_name)
         print(f"{proj_name} has been moved to the trash bin.")
 
     def tree(self, level: int = -1, limit_to_directories: bool = True, length_limit: int = 300):
@@ -501,7 +515,7 @@ oid using this method directly, as the content of json may be uncontrolable
         tee = '├── '
         last = '└── '
 
-        dir_path = self.out_database_dir_proj
+        dir_path = self._out_database_dir_proj
         files = 0
         directories = 0
 
@@ -533,18 +547,27 @@ oid using this method directly, as the content of json may be uncontrolable
         print(f'\n{directories} directories' + (f', {files} files' if files else ''))
 
     @staticmethod
-    def load_third_party(third_party_name: str, location: Literal["local", "out"] = "out") -> Path:
+    def load_third_party(third_party_name: str, location: Literal["local","out"] = "out",
+                         overwrite: bool = False) -> Path | None:
         """
         Load the third party json file to the third_party_json variable
+        if overwrite is True, then the existing third party json will be overwritten WITHOUT SAVING
         """
+        if (FileOrganizer.third_party_json is not None
+                and FileOrganizer.third_party_location is not None
+                and not overwrite):
+            print(f"already loaded one third party json @{FileOrganizer.third_party_location}, could choose overwrite.")
+            return
         if location == "local":
-            file_path = FileOrganizer.local_database_dir / f"{third_party_name}.json"
+            file_path = FileOrganizer._local_database_dir / f"{third_party_name}.json"
             FileOrganizer.third_party_location = "local"
         elif location == "out":
-            file_path = FileOrganizer.out_database_dir / f"{third_party_name}.json"
+            file_path = FileOrganizer._out_database_dir / f"{third_party_name}.json"
             FileOrganizer.third_party_location = "out"
         else:
             raise ValueError("The location should be either 'local' or 'out'.")
+
+        FileOrganizer.third_party_name = third_party_name
         if not file_path.exists():
             # create a new file with the name
             with open(file_path, "w", encoding="utf-8") as __third_party_file:

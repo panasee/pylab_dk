@@ -7,9 +7,9 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
-from common.file_organizer import FileOrganizer, print_help_if_needed
-import common.pltconfig.color_preset as colors
-from common.constants import cm_to_inch, factor, default_plot_dict
+from pylab_dk.file_organizer import FileOrganizer, print_help_if_needed
+import pylab_dk.pltconfig.color_preset as colors
+from pylab_dk.constants import cm_to_inch, factor, default_plot_dict
 from datetime import datetime
 
 

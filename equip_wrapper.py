@@ -37,12 +37,12 @@ from pymeasure.instruments.srs import SR830
 from pymeasure.instruments.oxfordinstruments import ITC503
 from pymeasure.instruments.keithley import Keithley6221
 from pymeasure.instruments.keithley import Keithley2182
-from common.Keithley_2400 import Keithley2400
-from common.mercuryITC import MercuryITC
-from common.Keithley_6430 import Keithley_6430
+from pylab_dk.Keithley_2400 import Keithley2400
+from pylab_dk.mercuryITC import MercuryITC
+from pylab_dk.Keithley_6430 import Keithley_6430
 
-from common.constants import convert_unit, print_progress_bar, switch_dict
-from common.data_plot import DataPlot
+from pylab_dk.constants import convert_unit, print_progress_bar, switch_dict
+from pylab_dk.data_plot import DataPlot
 
 
 class Meter(ABC):

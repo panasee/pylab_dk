@@ -7,7 +7,7 @@ from functools import wraps
 from typing import Tuple, Literal, Generator
 
 import numpy as np
-import common.pltconfig.color_preset as colors
+import pylab_dk.pltconfig.color_preset as colors
 
 # define constants
 cm_to_inch = 0.3937

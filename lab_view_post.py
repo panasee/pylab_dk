@@ -10,9 +10,9 @@ import pandas as pd
 from typing import Tuple
 import matplotlib
 
-from common.data_process import DataProcess
-from common.data_plot import DataPlot
-import common.pltconfig.color_preset as colors
+from pylab_dk.data_process import DataProcess
+from pylab_dk.data_plot import DataPlot
+import pylab_dk.pltconfig.color_preset as colors
 
 
 class LabViewPost(DataPlot):
