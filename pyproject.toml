@@ -21,7 +21,6 @@ dependencies = [
     "matplotlib",
     "plotly",
     "pandas",
-    "json",
     "pyvisa",
     "pymeasure>=0.14.0",
     "qcodes>=0.47.0"
