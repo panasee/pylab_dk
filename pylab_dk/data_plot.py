@@ -4,9 +4,9 @@
 
 from __future__ import annotations
 import importlib
-from typing import List, Tuple, Literal
 import copy
-import time
+from typing import Optional
+
 import matplotlib
 import matplotlib.axes
 import matplotlib.pyplot as plt
@@ -15,7 +15,6 @@ from plotly.subplots import make_subplots
 import numpy as np
 import pandas as pd
 
-from pylab_dk.file_organizer import FileOrganizer, script_base_dir
 import pylab_dk.pltconfig.color_preset as colors
 from pylab_dk.constants import cm_to_inch, factor, default_plot_dict, is_notebook
 from pylab_dk.data_process import DataProcess
@@ -35,7 +34,7 @@ class DataPlot(DataProcess):
         This class is used to store the parameters for the plot
         """
 
-        def __init__(self, *dims) -> None:
+        def __init__(self, *dims: int) -> None:
             """
             initialize the PlotParam
 
@@ -47,7 +46,7 @@ class DataPlot(DataProcess):
             # define a tmp params used for temporary storage, especially in class methods for convenience
             self.tmp = copy.deepcopy(default_plot_dict)
 
-        def _create_params_list(self, dims: Tuple[int]) -> List[dict] | List[any]:
+        def _create_params_list(self, dims: tuple[int, ...]) -> list[dict] | list[any]:
             """
             create the list of parameters for the plot
 
@@ -59,7 +58,7 @@ class DataPlot(DataProcess):
             else:
                 return [self._create_params_list(dims[1:]) for _ in range(dims[0])]
 
-        def _get_subarray(self, array, index: Tuple[int, ...]) -> List[dict]:
+        def _get_subarray(self, array, index: tuple[int, ...]) -> list[dict]:
             """
             get the subarray of the parameters for the plot assigned by the index
             """
@@ -68,7 +67,7 @@ class DataPlot(DataProcess):
             else:
                 return self._get_subarray(array[index[0]], index[1:])
 
-        def _set_subarray(self, array, index: Tuple[int, ...], target_dict: dict) -> None:
+        def _set_subarray(self, array, index: tuple[int, ...], target_dict: dict) -> None:
             """
             set the subarray of the parameters for the plot assignated by the index
             """
@@ -84,7 +83,7 @@ class DataPlot(DataProcess):
             return [item for sublist in lst for item in
                     (self._flatten(sublist) if isinstance(sublist, list) else [sublist])]
 
-        def __getitem__(self, index: Tuple[int, ...] | int) -> dict:
+        def __getitem__(self, index: tuple[int, ...] | int) -> dict:
             """
             get the parameters for the plot assignated by the index
 
@@ -99,12 +98,12 @@ class DataPlot(DataProcess):
                 result = result[0]
             return result
 
-        def __setitem__(self, index: Tuple[int, ...] | int, value):
+        def __setitem__(self, index: tuple[int, ...] | int, value):
             if isinstance(index, int):
                 index = (index,)
             self._set_subarray(self.params_list, index, value)
 
-    def __init__(self, proj_name: str, *, no_params: Tuple[int] | int = 4, usetex: bool = False, usepgf: bool = False,
+    def __init__(self, proj_name: str, *, no_params: tuple[int] | int = 4, usetex: bool = False, usepgf: bool = False,
                  if_folder_create=True) -> None:
         """
         Initialize the FileOrganizer and load the settings for matplotlib saved in another file
@@ -122,8 +121,8 @@ class DataPlot(DataProcess):
         self.unit = {"I": "A", "V": "V", "R": "Ohm", "T": "K", "B": "T", "f": "Hz"}
         # params here are mainly used for internal methods
         self.params = DataPlot.PlotParam(no_params)
-        self.live_dfs: List[List[List[go.Scatter]]] = []
-        self.go_f: go.FigureWidget = None
+        self.live_dfs: list[list[list[go.Scatter]]] = []
+        self.go_f: Optional[go.FigureWidget] = None
         if if_folder_create:
             self.assign_folder()
 
@@ -136,7 +135,7 @@ class DataPlot(DataProcess):
                 self.create_folder(f"plot/{i}")
 
     @staticmethod
-    def get_unit_factor_and_texname(unit: str) -> Tuple[float, str]:
+    def get_unit_factor_and_texname(unit: str) -> tuple[float, str]:
         """
         Used in plotting, to get the factor and the TeX name of the unit
         
@@ -164,7 +163,7 @@ class DataPlot(DataProcess):
         plot the RT curve
 
         Args:
-        - params: the PlotParam class containing the parameters for the plot, if None, the default parameters will be used.
+        - params: PlotParam class containing the parameters for the plot, if None, the default parameters will be used.
         - ax: the axes to plot the figure (require scalar)
         - custom_unit: defined if the unit is not the default one(uA, V), the format is {"I":"uA", "V":"mV", "R":"mOhm"}
         """
@@ -186,17 +185,17 @@ class DataPlot(DataProcess):
             ax.set_xscale("log")
 
     def df_plot_nonlinear(self, *,
-                          handlers: Tuple[matplotlib.axes.Axes, ...] = None,
-                          plot_order: Tuple[bool] = (True, True),
-                          reverse_V: Tuple[bool] = (False, False),
+                          handlers: tuple[matplotlib.axes.Axes, ...] = None,
+                          plot_order: tuple[bool] = (True, True),
+                          reverse_V: tuple[bool] = (False, False),
                           in_ohm: bool = False,
                           xylog1=(False, False), xylog2=(False, False)) \
-            -> matplotlib.axes.Axes | Tuple[matplotlib.axes.Axes, ...] | None:
+            -> matplotlib.axes.Axes | tuple[matplotlib.axes.Axes, ...] | None:
         """
         plot the nonlinear signals of a 1-2 omega measurement
 
         Args:
-        handlers: Tuple[matplotlib.axes.Axes]
+        handlers: tuple[matplotlib.axes.Axes]
             the handlers for the plot, the content should be (ax_1w, ax_1w_phi,ax_2w, ax_2w)
         params: PlotParam class containing the parameters for the 1st 
             signal plot, if None, the default parameters will be used.         
@@ -292,7 +291,7 @@ class DataPlot(DataProcess):
         else:
             file_name += "_notex"
 
-        config_module = importlib.import_module(f"{file_name}", script_base_dir)
+        config_module = importlib.import_module(file_name)
         DataPlot.legend_font = getattr(config_module, 'legend_font')
 
     @staticmethod
@@ -313,8 +312,8 @@ class DataPlot(DataProcess):
 
     @staticmethod
     def init_canvas(n_row: int, n_col: int, figsize_x: float, figsize_y: float,
-                    sub_adj: Tuple[float] = (0.19, 0.13, 0.97, 0.97, 0.2, 0.2), **kwargs) \
-            -> Tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, DataPlot.PlotParam]:
+                    sub_adj: tuple[float] = (0.19, 0.13, 0.97, 0.97, 0.2, 0.2), **kwargs) \
+            -> tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, DataPlot.PlotParam]:
         """
         initialize the canvas for the plot, return the fig and ax variables and params(n_row, n_col, 2)
 
@@ -332,9 +331,9 @@ class DataPlot(DataProcess):
         return fig, ax, DataPlot.PlotParam(n_row, n_col, 2)
 
     def live_plot_init(self, n_rows: int, n_cols: int, lines_per_fig: int = 2, pixel_height: float = 600,
-                       pixel_width: float = 1200, *, titles: Tuple[Tuple[str]] | list[list[str]] = None,
-                       axes_labels: Tuple[Tuple[Tuple[str]]] | list[list[list[str]]] = None,
-                       line_labels: Tuple[Tuple[Tuple[str]]] | list[list[list[str]]] = None) -> go.FigureWidget | None:
+                       pixel_width: float = 1200, *, titles: tuple[tuple[str]] | list[list[str]] = None,
+                       axes_labels: tuple[tuple[tuple[str]]] | list[list[list[str]]] = None,
+                       line_labels: tuple[tuple[tuple[str]]] | list[list[list[str]]] = None) -> None:
         """
         initialize the real-time plotter using plotly
 
@@ -383,7 +382,7 @@ class DataPlot(DataProcess):
         elif not is_notebook():
             fig.show()
 
-    def live_plot_update(self, row, col, lineno, x_data, y_data, *, incremental = False):
+    def live_plot_update(self, row, col, lineno, x_data, y_data, *, incremental=False):
         """
         update the live data in jupyter, the row, col, lineno all can be tuples to update multiple subplots at the
         same time. Note that this function is not appending datapoints, but replot the whole line, so provide the

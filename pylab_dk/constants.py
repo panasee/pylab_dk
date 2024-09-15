@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import sys
 from functools import wraps
-from typing import Tuple, Literal, Generator
+from typing import Literal, Generator
 
 import numpy as np
 import pylab_dk.pltconfig.color_preset as colors
@@ -69,7 +69,7 @@ def is_notebook() -> bool:
     return False
 
 
-def split_no_str(s: str | int | float) -> Tuple[float | None, str | None]:
+def split_no_str(s: str | int | float) -> tuple[float | None, str | None]:
     """
     split the string into the string part and the float part.
 
@@ -77,7 +77,7 @@ def split_no_str(s: str | int | float) -> Tuple[float | None, str | None]:
         s (str): the string to split
 
     Returns:
-        Tuple[float,str]: the string part and the integer part
+        tuple[float,str]: the string part and the integer part
     """
     if isinstance(s, (int, float)):
         return s, ""
@@ -90,7 +90,7 @@ def split_no_str(s: str | int | float) -> Tuple[float | None, str | None]:
         return None, None
 
 
-def convert_unit(before: float | int | str, target_unit: str = "") -> Tuple[float, str]:
+def convert_unit(before: float | int | str, target_unit: str = "") -> tuple[float, str]:
     """
     Convert the value with the unit to the SI unit.
 
@@ -99,7 +99,7 @@ def convert_unit(before: float | int | str, target_unit: str = "") -> Tuple[floa
         target_unit (str): the target unit
 
     Returns:
-        Tuple[float, str]: the value in the target unit and the whole str with final unit
+        tuple[float, str]: the value in the target unit and the whole str with final unit
     """
     value, unit = split_no_str(before)
     value_SI = value * factor(unit, mode="to_SI")
@@ -148,6 +148,7 @@ def gen_seq(start, end, step):
 
 def handle_keyboard_interrupt(func):
     """##TODO: to add cleanup, now not used"""
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -158,6 +159,7 @@ def handle_keyboard_interrupt(func):
             return None
 
     return wrapper
+
 
 def constant_generator(value, repeat: int | Literal["inf"] = "inf"):
     """
@@ -172,15 +174,17 @@ def constant_generator(value, repeat: int | Literal["inf"] = "inf"):
             idx += 1
             yield value
 
+
 def combined_generator_list(lst_gens: list[Generator]):
     """
-    combine a list of generators into one generator
+    combine a list of generators into one generator generating a whole list
     """
     while True:
         try:
             yield [next(i) for i in lst_gens]
         except StopIteration:
             break
+
 
 if "__name__" == "__main__":
     if is_notebook():

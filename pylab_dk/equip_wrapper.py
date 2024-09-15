@@ -29,7 +29,7 @@ Flow:
 from __future__ import annotations
 
 import time
-from typing import Literal, Tuple
+from typing import Literal
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -37,9 +37,9 @@ from pymeasure.instruments.srs import SR830
 from pymeasure.instruments.oxfordinstruments import ITC503
 from pymeasure.instruments.keithley import Keithley6221
 from pymeasure.instruments.keithley import Keithley2182
-from pylab_dk.Keithley_2400 import Keithley2400
-from pylab_dk.mercuryITC import MercuryITC
-from pylab_dk.Keithley_6430 import Keithley_6430
+from pylab_dk.drivers.Keithley_2400 import Keithley2400
+from pylab_dk.drivers.mercuryITC import MercuryITC
+from pylab_dk.drivers.Keithley_6430 import Keithley_6430
 
 from pylab_dk.constants import convert_unit, print_progress_bar, switch_dict
 from pylab_dk.data_plot import DataPlot
@@ -910,7 +910,7 @@ class ITCs(ITC):
         return [self.itc_up.control_mode, self.itc_down.control_mode]
 
     @control_mode.setter
-    def control_mode(self, mode: Tuple[Literal["LU", "RU", "LL", "RL"], Literal["all", "up", "down"]]):
+    def control_mode(self, mode: tuple[Literal["LU", "RU", "LL", "RL"], Literal["all", "up", "down"]]):
         """ Sets the control mode of the ITC503. A two-element list is required. The second elecment is "all" or "up"
         or "down" to specify which ITC503 to set."""
         if mode[1] == "all":
@@ -927,7 +927,7 @@ class ITCs(ITC):
         return [self.itc_up.heater_gas_mode, self.itc_down.heater_gas_mode]
 
     @heater_gas_mode.setter
-    def heater_gas_mode(self, mode: Tuple[Literal["MANUAL", "AM", "MA", "AUTO"], Literal["all", "up", "down"]]):
+    def heater_gas_mode(self, mode: tuple[Literal["MANUAL", "AM", "MA", "AUTO"], Literal["all", "up", "down"]]):
         """ Sets the heater gas mode of the ITC503. A two-element list is required. The second elecment is "all" or
         "up" or "down" to specify which ITC503 to set."""
         if mode[1] == "all":

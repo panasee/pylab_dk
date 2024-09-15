@@ -1,0 +1,19 @@
+spec: "1.0"
+devices:
+  SR830:
+    eom:
+      GPIB INSTR:
+        q: "\n"  # MAKE SURE! that this matches the terminator of the driver!
+        r: "\n"
+    error: ERROR
+    dialogues:
+      - q: "*IDN?"
+        r: "SR830 Simulator"
+      # Add more dialogues according to manual or practice
+      - q: "OUTP?"
+        r: "{RANDOM(0,2,4):.4f}"
+
+
+resources:
+  GPIB::8::INSTR:
+    device: SR830

@@ -26,8 +26,8 @@ def set_paths(*, local_db_path: Path | str | None = None, out_db_path: Path | st
     if out_db_path is not None:
         OUT_DB_PATH = Path(out_db_path)
     else:
-        if os.getenv("PYLAB_DB_LOCAL") is None:
-            print("PYLAB_DB_LOCAL not set")
+        if os.getenv("PYLAB_DB_OUT") is None:
+            print("PYLAB_DB_OUT not set")
         else:
             OUT_DB_PATH = Path(os.getenv("PYLAB_DB_OUT"))
             print(f"read from PYLAB_DB_OUT:{OUT_DB_PATH}")

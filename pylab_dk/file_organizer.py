@@ -75,7 +75,6 @@ class FileOrganizer:
             proj_name: str
                 The name of the project, used as the name of the base directory
         """
-        # #TODO: add a special mode to allow the user to create a project without the need of the out_database_dir,
         #  store the data directly in the local_database_dir
         if platform.system().lower() == "windows":
             self.curr_sys = "win"

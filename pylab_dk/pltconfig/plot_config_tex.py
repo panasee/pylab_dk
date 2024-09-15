@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 
 
-#mpl.use("pgf")
 plt.rcParams.update({
     'text.usetex': True,
     "font.family": "serif",  # use serif/main font for text elements

@@ -1,3 +1,5 @@
+# this file contains some color presets
+# from different resources, like games, websites and articles
 Genshin = {
     "Ayaka" : [
         ( 34/255, 36/255, 73/255),

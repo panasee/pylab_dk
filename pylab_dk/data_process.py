@@ -1,14 +1,11 @@
 #!/usr/bin/env python
 """This module is responsible for processing and plotting the data"""
+from __future__ import annotations
 
-import importlib
-from typing import List, Tuple, Literal
+from typing import Literal
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 import pandas as pd
 from pylab_dk.file_organizer import FileOrganizer, print_help_if_needed
-import pylab_dk.pltconfig.color_preset as colors
 from pylab_dk.constants import cm_to_inch, factor, default_plot_dict
 from datetime import datetime
 
@@ -98,7 +95,7 @@ class DataProcess(FileOrganizer):
         return self.dfs["nonlinear"].copy()
 
     @staticmethod
-    def merge_with_tolerance(df1: pd.DataFrame, df2: pd.DataFrame, on: any, tolerance: float, suffixes: Tuple[str] = ("_1", "_2")) -> pd.DataFrame:
+    def merge_with_tolerance(df1: pd.DataFrame, df2: pd.DataFrame, on: any, tolerance: float, suffixes: tuple[str] = ("_1", "_2")) -> pd.DataFrame:
         """
         Merge two dataframes with tolerance
 
@@ -130,7 +127,7 @@ class DataProcess(FileOrganizer):
 
         return pd.DataFrame(result).copy()
     
-    def symmetrize(self, measurename_all: str | pd.DataFrame, index_col: any, obj_col: List[any], neutral_point: float = 0) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def symmetrize(self, measurename_all: str | pd.DataFrame, index_col: any, obj_col: list[any], neutral_point: float = 0) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         do symmetrization to the dataframe and return the symmetric and antisymmetric parts as new DataFrames, note that this function is dealing with only one line of data, meaning the positive and negative parts are to be combined first (no need to sort)
 
@@ -166,7 +163,7 @@ class DataProcess(FileOrganizer):
         return pd.concat([sym_df, antisym_df], axis = 1)
 
     @staticmethod
-    def time_to_datetime(t : pd.Series, *, past_time: Literal["min", "hour", "no"]="min")-> List[datetime]:
+    def time_to_datetime(t : pd.Series, *, past_time: Literal["min", "hour", "no"]="min")-> list[datetime]:
         """
         Convert the time to datetime object, used to split time series without day information
 
@@ -176,7 +173,7 @@ class DataProcess(FileOrganizer):
         past_time : Literal["min", "hour", "no"]
             Whether to return the time past from first time points instead of return datetime list 
         Returns:
-        List[datetime.datetime]
+        list[datetime.datetime]
             The converted datetime object list, year and month are meaningless, just use the date from 1
         """
         datetimes = [datetime.strptime(ts,"%I:%M %p").time() for ts in t]

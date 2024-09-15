@@ -28,3 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 jupyter = ["jupyter"]
+gui = ["PyQt6"]
+
+[project.scripts]
+gui_coor_trans = "pylab_dk.auxiliary:Flakes.gui_coor_transition"
