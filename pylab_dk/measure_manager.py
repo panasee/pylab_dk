@@ -157,9 +157,10 @@ class MeasureManager(DataPlot):
 
     def source_sweep_apply(self, source_type: Literal["volt", "curr", "V", "I"], ac_dc: Literal["ac", "dc"],
                            meter: str | SourceMeter, *, max_value: float | str, step_value: float | str,
-                           compliance: float | str,
-                           freq: float | str = None, sweepmode: Literal["0-max-0", "0--max-max-0", None] = None,
-                           resistor: float = None) -> Generator[float, None, None]:
+                           compliance: float | str, freq: float | str = None,
+                           sweepmode: Optional[Literal["0-max-0", "0--max-max-0", "manual"]] = None,
+                           resistor: float = None, sweep_table: Optional[list[float | str, ...]] = None) -> Generator[
+        float, None, None]:
         """
         source the current using the source meter
 
@@ -171,17 +172,23 @@ class MeasureManager(DataPlot):
             step_value (float): the step of the current
             compliance (float): the compliance voltage of the source meter
             freq (float): the frequency of the ac current
-            sweepmode (Literal["0-max-0","0--max-max-0"]): the mode of the dc current sweep
-            resistor (float): the resistance of the resistor, used only for sr830 source
+            sweepmode (Literal["0-max-0","0--max-max-0","manual"]): the mode of the dc current sweep, note that the
+                "manual" mode is for both ac and dc source, requiring the sweep_table to be provided
+            resistor (float): the resistance of the resistor, used only for sr830 source. Once it is provided, the
+                source value will be regarded automatically as current
+            sweep_table (list[float|str,...]): the table of the sweep values (only if sweepmode is "manual")
         """
         # load the instrument needed
         source_type = source_type.replace("V", "volt").replace("I", "curr")
         if meter == "6221" and source_type == "volt":
             raise ValueError("6221 cannot source voltage")
-        if len(meter.split("-")) == 1:
-            instr = self.instrs[meter][0]
-        elif len(meter_tuple := meter.split("-")) == 2:
-            instr = self.instrs[meter_tuple[0]][int(meter_tuple[1])]
+        if isinstance(meter, str):
+            if len(meter.split("-")) == 1:
+                instr = self.instrs[meter][0]
+            elif len(meter_tuple := meter.split("-")) == 2:
+                instr = self.instrs[meter_tuple[0]][int(meter_tuple[1])]
+            else:
+                raise ValueError("meter name is not in the correct format")
         elif isinstance(meter, SourceMeter):
             instr = meter
         else:
@@ -209,25 +216,38 @@ class MeasureManager(DataPlot):
                 value_gen = self.sweep_values(0, max_value, step_value, mode="start-end-start")
             elif sweepmode == "0--max-max-0":
                 value_gen = self.sweep_values(-max_value, max_value, step_value, mode="0-start-end-0")
+            elif sweepmode == "manual":
+                value_gen = (i for i in convert_unit(sweep_table, "")[0])
             else:
                 raise ValueError("sweepmode not recognized")
-            instr.uni_output(value_i := next(value_gen), compliance=compliance, type_str=source_type)
-            yield value_i
+            for value_i in value_gen:
+                instr.uni_output(value_i, compliance=compliance, type_str=source_type)
+                yield value_i
         elif ac_dc == "ac":
             if resistor is not None:
-                volt_gen = (i for i in list(np.arange(0, max_value * resistor, step_value)) + [max_value * resistor])
-                instr.uni_output(value_i := next(volt_gen), freq=freq, type_str="volt")
+                if sweepmode == "manual":
+                    volt_gen = (i * resistor for i in convert_unit(sweep_table, "")[0])
+                else:
+                    volt_gen = (i for i in list(np.arange(0, max_value * resistor, step_value)) + [max_value * resistor])
+                for value_i in volt_gen:
+                    instr.uni_output(value_i, freq=freq, type_str="volt")
+                    yield value_i
             else:
                 if meter == "6221" or isinstance(meter, Wrapper6221):
                     instr.setup("ac")
-                value_gen = (i for i in list(np.arange(0, max_value, step_value)) + [max_value])
-                instr.uni_output(value_i := next(value_gen), freq=freq, compliance=compliance, type_str=source_type)
-            yield value_i
+                if sweepmode == "manual":
+                    value_gen = (i for i in convert_unit(sweep_table, "")[0])
+                else:
+                    value_gen = (i for i in list(np.arange(0, max_value, step_value)) + [max_value])
+                for value_i in value_gen:
+                    instr.uni_output(value_i, freq=freq, compliance=compliance, type_str=source_type)
+                    yield value_i
 
     def ext_sweep_apply(self, ext_type: Literal["temp", "mag", "B", "T"], *,
                         min_value: float | str = None, max_value: float | str, step_value: float | str,
-                        sweepmode: Literal["0-max-0", "0--max-max-0", "min-max"] = "0-max-0") -> Generator[
-        float, None, None]:
+                        sweepmode: Literal["0-max-0", "0--max-max-0", "min-max", "manual"] = "0-max-0",
+                        sweep_table: Optional[tuple[float | str, ...]] = None) \
+            -> Generator[float, None, None]:
         """
         sweep the external field (magnetic/temperature).
         Note that this sweep is the "discrete" sweep, waiting at every point till stabilization
@@ -237,7 +257,8 @@ class MeasureManager(DataPlot):
             min_value (float | str): the minimum value of the field
             max_value (float | str): the maximum value of the field
             step_value (float | str): the step of the field
-            sweepmode (Literal["0-max-0","0--max-max-0","min-max"]): the mode of the field sweep
+            sweepmode (Literal["0-max-0","0--max-max-0","min-max", "manual"]): the mode of the field sweep
+            sweep_table (tuple[float,...]): the table of the sweep values (only if sweepmode is "manual")
         """
         ext_type = ext_type.replace("T", "temp").replace("B", "mag")
         if ext_type == "temp":
@@ -259,14 +280,17 @@ class MeasureManager(DataPlot):
             value_gen = self.sweep_values(-max_value, max_value, step_value, mode="0-start-end-0")
         elif sweepmode == "min-max":
             value_gen = self.sweep_values(min_value, max_value, step_value, mode="start-end")
+        elif sweepmode == "manual":
+            value_gen = (i for i in convert_unit(sweep_table, "")[0])
         else:
             raise ValueError("sweepmode not recognized")
 
-        if ext_type == "temp":
-            instr.ramp_to_temperature(value_i := next(value_gen), wait=True)
-        else:  # ext_type == "mag"
-            self.ramp_magfield(value_i := next(value_gen), wait=True)
-        yield value_i
+        for value_i in value_gen:
+            if ext_type == "temp":
+                instr.ramp_to_temperature(value_i, wait=True)
+            else:  # ext_type == "mag"
+                self.ramp_magfield(value_i, wait=True)
+            yield value_i
 
     def sense_apply(self, sense_type: Literal["volt", "curr", "temp", "mag", "V", "I", "T", "B", "H"],
                     meter: str | Meter = None, *, if_during_vary=False) \
@@ -287,10 +311,13 @@ class MeasureManager(DataPlot):
             "H", "mag")
         print(f"Sense Type: {sense_type}")
         if sense_type in ["volt", "curr"] and meter is not None:
-            if len(meter.split("-")) == 1:
-                instr = self.instrs[meter][0]
-            elif len(meter_tuple := meter.split("-")) == 2:
-                instr = self.instrs[meter_tuple[0]][int(meter_tuple[1])]
+            if isinstance(meter, str):
+                if len(meter.split("-")) == 1:
+                    instr = self.instrs[meter][0]
+                elif len(meter_tuple := meter.split("-")) == 2:
+                    instr = self.instrs[meter_tuple[0]][int(meter_tuple[1])]
+                else:
+                    raise ValueError("meter name is not in the correct format")
             elif isinstance(meter, Meter):
                 instr = meter
             else:
@@ -325,7 +352,7 @@ class MeasureManager(DataPlot):
                     # only z field is considered
                     if abs(np.linalg.norm(
                             (instr.x_measured(), instr.y_measured(), instr.z_measured())) - np.linalg.norm(
-                            instr.z_target())) < 0.01:
+                        instr.z_target())) < 0.01:
                         timer_i += 1
                     else:
                         timer_i = 0
@@ -335,7 +362,8 @@ class MeasureManager(DataPlot):
                     manual_columns: list[str] = None, return_df: bool = False) \
             -> tuple[Path, int] | tuple[Path, int, pd.DataFrame]:
         """
-        initialize the record of the measurement
+        initialize the record of the measurement and the csv file;
+        note the file will be overwritten with an empty dataframe
 
         Args:
             measure_mods (str): the full name of the measurement (put main source as the first source module term)
@@ -403,14 +431,16 @@ class MeasureManager(DataPlot):
         Args:
             file_path (Path): the file path
             record_num (int): the number of columns of the record
-            record_tuple (tuple): the variables of the record
+            record_tuple (tuple): tuple of the records, with no time column, so length is 1 shorter
             force_write (bool): whether to force write the record
-            with_time (bool): whether to record the time (first column)
+            with_time (bool): whether to record the time (first column), note the time column
+                is by default included by record_init method
         """
         if with_time:
             # the time is updated here, no need to be provided
             assert len(record_tuple) == record_num - 1, "The number of columns does not match"
-            self.dfs["curr_measure"].loc[len(self.dfs["curr_measure"])] = [datetime.datetime.now()] + list(record_tuple)
+            self.dfs["curr_measure"].loc[len(self.dfs["curr_measure"])] = (
+                    [datetime.datetime.now().strftime("%y-%m-%d_%H:%M:%S")] + list(record_tuple))
         else:
             assert len(record_tuple) == record_num, "The number of columns does not match"
             self.dfs["curr_measure"].loc[len(self.dfs["curr_measure"])] = list(record_tuple)
@@ -422,15 +452,17 @@ class MeasureManager(DataPlot):
 
     @print_help_if_needed
     def get_measure_dict(self, measure_mods: tuple[str], *var_tuple: float | str,
-                         wrapper_lst: list[Meter | SourceMeter] = None,
-                         compliance_lst: list[float | str], sr830_current_resistor: float = None) -> dict:
+                         wrapper_lst: list[Meter | SourceMeter] = None, compliance_lst: list[float | str],
+                         sr830_current_resistor: float = None, if_combine_gen: bool = True,
+                         sweep_tables: list[list[float | str, ...]] = None) -> dict:
         """
         do the preset of measurements and return the generators, filepath and related info
-        NOTE: meter setup should be done before calling this method
-        NOTE: the generators are listed in parallel, if there are more than one sweep, do manual Cartesian product
+        NOTE: meter setup should be done before calling this method, they will be bound to generators
+        NOTE: the generators are listed in parallel, if there are more than one sweep,
+            do manual Cartesian product using itertools.product(gen1,gen2) -> (gen1.1,gen2.all), (gen1.2,gen2.all)...
 
-        sweep mode: for I,V: "0-max-0", "0--max-max-0"
-        sweep mode: for T,B: "0-max-0", "0--max-max-0", "min-max"
+        sweep mode: for I,V: "0-max-0", "0--max-max-0", "manual"
+        sweep mode: for T,B: "0-max-0", "0--max-max-0", "min-max", "manual"
 
         Args:
             measure_mods (tuple[str]): the modules of measurement
@@ -438,16 +470,21 @@ class MeasureManager(DataPlot):
             wrapper_lst (list[Meter]): the list of the wrappers to be used
             compliance_lst (list[float]): the list of the compliance to be used (sources)
             sr830_current_resistor (float): the resistance of the resistor, used only for sr830 curr source
+            if_combine_gen (bool): whether to combine the generators as a whole list generator,
+                                if False, return the list of generators for further operations
+            sweep_tables (list[list[float | str, ...]]): the list of the sweep tables for manual sweep,
+                                the table will be fetched and used according to the order from left to right(0->1->2...)
 
         Returns:
             dict: a dictionary containing the list of generators, dataframe csv filepath and record number
                 keys: "gen_lst"(combined list generator), "swp_idx" (indexes for sweeping generator, not including vary),
                 "file_path"(csv file), "record_num"(num of record data columns, without time),
-                "tmp_vary", "mag_vary" (the function used to begin the varying of T/B, no parameters needed)
+                "tmp_vary", "mag_vary" (the function used to begin the varying of T/B, no parameters needed, e.g. start magnetic field varying by calling mag_vary())
         """
         src_lst, sense_lst, oth_lst = self.extract_info_mods(measure_mods, *var_tuple)
         assert len(src_lst) + len(sense_lst) == len(wrapper_lst), "The number of modules and meters should be the same"
         assert len(src_lst) == len(compliance_lst), "The number of sources and compliance should be the same"
+
         # init record dataframe
         file_path, record_num = self.record_init(measure_mods, *var_tuple)
         # init plotly canvas
@@ -458,6 +495,7 @@ class MeasureManager(DataPlot):
         sweep_idx = []
         vary_mod = []  # T, B
         # source part
+        mod_i: Literal["I", "V"]
         for idx, src_mod in enumerate(src_lst):
             if src_mod["I"]["sweep_fix"] is not None:
                 mod_i = "I"
@@ -470,12 +508,17 @@ class MeasureManager(DataPlot):
                 wrapper_lst[idx].ramp_output("curr", src_mod[mod_i]["fix"], compliance=compliance_lst[idx])
                 rec_lst.append(constant_generator(src_mod[mod_i]["fix"]))
             elif src_mod[mod_i]["sweep_fix"] == "sweep":
+                if src_mod[mod_i]["mode"] == "manual":
+                    sweep_table = sweep_tables.pop(0)
+                else:
+                    sweep_table = None
                 rec_lst.append(self.source_sweep_apply(mod_i, src_mod[mod_i]["ac_dc"], wrapper_lst[idx],
                                                        max_value=src_mod[mod_i]["max"],
                                                        step_value=src_mod[mod_i]["step"],
                                                        compliance=compliance_lst[idx], freq=src_mod[mod_i]["freq"],
                                                        sweepmode=src_mod[mod_i]["mode"],
-                                                       resistor=sr830_current_resistor))
+                                                       resistor=sr830_current_resistor,
+                                                       sweep_table=sweep_table))
                 sweep_idx.append(idx)
         # sense part
         for idx, sense_mod in enumerate(sense_lst):
@@ -505,10 +548,22 @@ class MeasureManager(DataPlot):
                         self.ramp_magfield(oth_mod["stop"], wait=False)
                 rec_lst.append(self.sense_apply(oth_mod["name"], if_during_vary=True))
             elif oth_mod["sweep_fix"] == "sweep":
-                rec_lst.append(self.ext_sweep_apply(oth_mod["name"], min_value=oth_mod["min"], max_value=oth_mod["max"],
-                                                    step_value=oth_mod["step"], sweepmode=oth_mod["mode"]))
+                if oth_mod["mode"] == "manual":
+                    sweep_table = sweep_tables.pop(0)
+                else:
+                    sweep_table = None
+                rec_lst.append(self.ext_sweep_apply(oth_mod["name"],
+                                                    min_value=oth_mod["min"],
+                                                    max_value=oth_mod["max"],
+                                                    step_value=oth_mod["step"],
+                                                    sweepmode=oth_mod["mode"],
+                                                    sweep_table=sweep_table))
                 sweep_idx.append(idx + len(src_lst) + len(sense_lst))
-        total_gen = combined_generator_list(rec_lst)
+        if if_combine_gen:
+            total_gen = combined_generator_list(rec_lst)
+        else:
+            total_gen = rec_lst
+
         return {
             "gen_lst": total_gen,
             "swp_idx": sweep_idx,
