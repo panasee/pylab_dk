@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 """This module is responsible for processing and plotting the data"""
-from __future__ import annotations
-
 from typing import Literal
 import numpy as np
 import pandas as pd

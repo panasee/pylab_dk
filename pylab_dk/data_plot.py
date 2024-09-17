@@ -2,7 +2,6 @@
 """This module is responsible for processing and plotting the data"""
 # Todo: rewrite the plotting methods, mainly used for automatically saving the plots to the folder in coorperation with MeasureManager
 
-from __future__ import annotations
 import importlib
 import copy
 from typing import Optional

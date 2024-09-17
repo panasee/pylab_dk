@@ -26,8 +26,6 @@ Flow:
     (change value without disabling the output)
     shutdown()
 """
-from __future__ import annotations
-
 import time
 from typing import Literal
 from abc import ABC, abstractmethod

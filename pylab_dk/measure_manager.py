@@ -4,8 +4,6 @@
 """This module is responsible for managing the measure-related folders and data Note each instrument better be
 initialzed right before the measurement, as there may be a long time between loading and measuremnt, leading to
 possibilities of parameter changing"""
-from __future__ import annotations
-
 import copy
 from typing import Literal, Generator
 import time
