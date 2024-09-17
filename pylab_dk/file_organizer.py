@@ -256,6 +256,7 @@ class FileOrganizer:
                                  source_dict["indexes"] + sense_dict["indexes"] + other_dict["indexes"]]
         namestr = "-".join(source_dict["namestr"]) + "_" + "-".join(sense_dict["namestr"]) + "_" + "-".join(
             other_dict["namestr"])
+        namestr = namestr.strip("_")
         if require_detail:
             return mainname_str, namestr, mods_detail_dicts_lst
         else:
@@ -264,12 +265,12 @@ class FileOrganizer:
     @staticmethod
     def filename_format(name_str: str, *var_tuple) -> str:
         """This method is used to format the filename"""
-        # Extract variable names from the format string
-        var_names = re.findall(r'{(\w+)}', name_str)
-        # Create a dictionary that maps variable names to values
-        var_dict = dict(zip(var_names, var_tuple))
-        # Substitute variables into the format string
-        return name_str.format(**var_dict)
+        for value in var_tuple:
+            name_str = re.sub(r"{\w+}", str(value), name_str, count=1)
+        # the method needs to throw an error if there are still {} in the name_str
+        if re.search(r"{\w+}", name_str):
+            raise ValueError("The name_str still contains {}, please check the variables.")
+        return name_str
 
     #TODO: delete after confirming not needed
 

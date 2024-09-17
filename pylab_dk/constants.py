@@ -179,7 +179,14 @@ def combined_generator_list(lst_gens: list[Generator]):
     """
     while True:
         try:
-            yield [next(i) for i in lst_gens]
+            list_ini = [next(i) for i in lst_gens]
+            list_fin = []
+            for i in list_ini:
+                if isinstance(i, list | tuple):
+                    list_fin.extend(i)
+                else:
+                    list_fin.append(i)
+            yield list_fin
         except StopIteration:
             break
 

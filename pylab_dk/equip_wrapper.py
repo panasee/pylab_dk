@@ -12,7 +12,7 @@ each wrapper provides the following methods(some only for source meters):
     all output methods have two implementations, one is from off to on, including
     setting up parameters like range and compliance, the other is just setting the
     output value when already on
-- get_output: get the current output value
+- get_output_status: get the current output value
 - sense: set the meter to sense current or voltage
 - shutdown: shutdown the equipment
 - ramp_output: ramp the output to the target value
@@ -73,7 +73,7 @@ class Meter(ABC):
         self.info_dict.update({})
 
     @abstractmethod
-    def sense(self, type_str: Literal["curr", "volt"]):
+    def sense(self, type_str: Literal["curr", "volt"]) -> float | list:
         pass
 
     def __del__(self):
@@ -85,6 +85,7 @@ class SourceMeter(Meter):
     def __init__(self):
         super().__init__()
         self.info_dict.update({"output_type": "curr"})
+        self.output_target = 0
 
     @abstractmethod
     def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
@@ -94,6 +95,17 @@ class SourceMeter(Meter):
     def uni_output(self, value: float | str, *, freq: float | str = None, compliance: float | str = None,
                    type_str: Literal["curr", "volt"]):
         self.info_dict["output_type"] = type_str
+        self.output_target = value
+
+    @abstractmethod
+    def get_output_status(self) -> tuple[float, float]:
+        """
+        return the output value from device and also the target value set by output methods
+
+        Returns:
+            tuple[float, float]: the output value and the target value
+        """
+        pass
 
     @abstractmethod
     def shutdown(self):
@@ -115,7 +127,7 @@ class SourceMeter(Meter):
             value: the target value
             compliance: the compliance value
         """
-        type_str = type_str.replace("V", "volt").replace("I", "curr")
+        type_str: Literal["curr", "volt"] = type_str.replace("V", "volt").replace("I", "curr")
         value = convert_unit(value, "")[0]
         self.output_switch("off")
         self.output_switch("on")
@@ -145,7 +157,7 @@ class ACSourceMeter(SourceMeter):
         pass
 
 
-class DCSourceMeter(Meter):
+class DCSourceMeter(SourceMeter):
     @abstractmethod
     def __init__(self):
         super().__init__()
@@ -168,6 +180,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
     def __init__(self, GPIB: str = "GPIB0::12::INSTR"):
         super().__init__()
         self.meter = Keithley6221(GPIB)
+        self.output_target = 0
         self.info_dict = {"GPIB": GPIB,
                           "output_type": "curr",
                           "ac_dc": "ac",
@@ -178,7 +191,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
 
     def info_sync(self):
         self.info_dict.update({"source_range": self.meter.source_range,
-                               "output_value": self.meter.source_current,
+                               "output_value": max(self.meter.source_current, self.meter.waveform_amplitude),
                                "frequency": self.meter.waveform_frequency,
                                "compliance": self.meter.source_compliance,
                                "wave_function": self.meter.waveform_function,
@@ -236,12 +249,23 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
                 self.meter.disable_source()
                 self.info_dict["output_status"] = False
 
+    def get_output_status(self) -> tuple[float, float]:
+        """
+        return the output value from device and also the target value set by output methods
+
+        Returns:
+            tuple[float, float]: the output value and the target value
+        """
+        return max(self.meter.source_current, self.meter.waveform_amplitude), self.output_target
+
     def uni_output(self, value: float | str, *, freq: float | str = None,
                    compliance: float | str = None, type_str: Literal["curr"] = "curr"):
         if self.info_dict["ac_dc"] == "ac":
             self.rms_output(value, freq=freq, compliance=compliance, type_str=type_str)
         elif self.info_dict["ac_dc"] == "dc":
             self.dc_output(value, compliance=compliance, type_str=type_str)
+
+        self.output_target = convert_unit(value, "A")[0]
 
     def rms_output(self, value: float | str, *, freq: float | str = None, compliance: float | str = None,
                    type_str: Literal["curr"] = "curr"):
@@ -338,7 +362,7 @@ class Wrapper2182(Meter):
         """
         pass
 
-    def sense(self, type_str: Literal["volt"] = "volt"):
+    def sense(self, type_str: Literal["volt"] = "volt") -> float:
         return self.meter.voltage
 
 
@@ -346,8 +370,8 @@ class WrapperSR830(ACSourceMeter):
     def __init__(self, GPIB: str = "GPIB0::8::INSTR", reset=True):
         super().__init__()
         self.meter = SR830(GPIB)
-        self.info_dict = {"GPIB": GPIB,
-                          }
+        self.output_target = 0
+        self.info_dict = {"GPIB": GPIB}
         if reset:
             self.setup()
         self.info_sync()
@@ -405,8 +429,17 @@ class WrapperSR830(ACSourceMeter):
         self.meter.harmonic = harmonic
         self.info_sync()
 
-    def sense(self, type_str: Literal["volt"] = "volt"):
+    def sense(self, type_str: Literal["volt"] = "volt") -> list:
         return self.meter.snap("X", "Y", "R", "THETA")
+
+    def get_output_status(self) -> tuple[float, float]:
+        """
+        return the output value from device and also the target value set by output methods
+
+        Returns:
+            tuple[float, float]: the output value and the target value
+        """
+        return self.meter.sine_voltage, self.output_target
 
     def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
         switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
@@ -420,6 +453,7 @@ class WrapperSR830(ACSourceMeter):
     def uni_output(self, value: float | str, *, freq: float | str = None, compliance: float | str = None,
                    type_str: Literal["volt"] = "volt"):
         self.rms_output(value, freq=freq, compliance=compliance, type_str=type_str)
+        self.output_target = convert_unit(value, "V")[0]
 
     def rms_output(self, value: float | str, *, freq: float | str = None, compliance: float | str = None,
                    type_str: Literal["volt"] = "volt"):
@@ -443,6 +477,7 @@ class Wrapper6430(DCSourceMeter):
         super().__init__()
         self.meter = Keithley_6430("Keithley6430", GPIB)
         self.info_dict = {}
+        self.output_target = 0
         self.info_sync()
 
     def info_sync(self):
@@ -470,7 +505,7 @@ class Wrapper6430(DCSourceMeter):
         self.meter.sense_autorange(True)
         self.info_sync()
 
-    def sense(self, type_str: Literal["curr", "volt", "resist"]):
+    def sense(self, type_str: Literal["curr", "volt", "resist"]) -> float:
         if type_str == "curr":
             self.meter.sense_mode("CURR:DC")
             return self.meter.sense_current()
@@ -481,33 +516,51 @@ class Wrapper6430(DCSourceMeter):
             self.meter.sense_mode("RES")
             return self.meter.sense_resistance()
 
-    def switch_output(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
+    def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
         switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
         self.meter.output_enabled(switch)
         self.info_dict["output_status"] = switch
 
-    def uni_output(self, value: float | str, *, compliance: float | str, type_str: Literal["curr", "volt"]):
+    def get_output_status(self) -> tuple[float, float]:
+        """
+        return the output value from device and also the target value set by output methods
+
+        Returns:
+            tuple[float, float]: the output value and the target value
+        """
+        if self.meter.source_mode().lower() == "curr":
+            return self.meter.source_current(), self.output_target
+        elif self.meter.source_mode().lower() == "volt":
+            return self.meter.source_voltage(), self.output_target
+
+    def uni_output(self, value: float | str, *, freq=None,
+                   compliance: float | str = None, type_str: Literal["curr", "volt"]):
         self.dc_output(value, compliance=compliance, type_str=type_str)
+        self.output_target = convert_unit(value, "")[0]
 
     def dc_output(self, value: float | str, *, compliance: float | str, type_str: Literal["curr", "volt"]):
         value = convert_unit(value, "")[0]
         if type_str == "curr":
             self.meter.source_mode("CURR")
             self.meter.source_current_range(min(max(value / 0.7, 1E-12), 0.105))
+            if compliance is None:
+                compliance = value * 1000
             self.meter.source_voltage_compliance(convert_unit(compliance, "A")[0])
             self.meter.source_current(value)
 
         elif type_str == "volt":
             self.meter.source_mode("VOLT")
             self.meter.source_voltage_range(min(max(value / 0.7, 0.2), 200))
+            if compliance is None:
+                compliance = value / 1000
             self.meter.source_current_compliance(convert_unit(compliance, "V")[0])
             self.meter.source_voltage(value)
 
         self.info_dict["output_type"] = type_str
-        self.switch_output("on")
+        self.output_switch("on")
 
     def shutdown(self):
-        self.switch_output("off")
+        self.output_switch("off")
 
 
 class Wrapper2400(DCSourceMeter):
@@ -515,6 +568,7 @@ class Wrapper2400(DCSourceMeter):
         super().__init__()
         self.meter = Keithley2400("Keithley2400", GPIB)
         self.info_dict = {}
+        self.output_target = 0
         self.info_sync()
 
     def info_sync(self):
@@ -531,7 +585,7 @@ class Wrapper2400(DCSourceMeter):
     def setup(self):
         self.info_sync()
 
-    def sense(self, type_str: Literal["curr", "volt", "resist"]):
+    def sense(self, type_str: Literal["curr", "volt", "resist"]) -> float:
         if type_str == "curr":
             if self.info_dict["output_type"] == "curr":
                 print("in curr mode, print the set point")
@@ -543,35 +597,53 @@ class Wrapper2400(DCSourceMeter):
         elif type_str == "resist":
             return self.meter.resistance()
 
-    def switch_output(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
+    def get_output_status(self) -> tuple[float, float]:
+        """
+        return the output value from device and also the target value set by output methods
+
+        Returns:
+            tuple[float, float]: the output value and the target value
+        """
+        if self.meter.mode().lower() == "curr":
+            return self.meter.curr(), self.output_target
+        elif self.meter.mode().lower() == "volt":
+            return self.meter.volt(), self.output_target
+
+    def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
         switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
         self.meter.output(switch)
         self.info_dict["output_status"] = switch
 
-    def uni_output(self, value: float | str, *, compliance: float | str, type_str: Literal["curr", "volt"]):
+    def uni_output(self, value: float | str, *, freq=None,
+                   compliance: float | str = None, type_str: Literal["curr", "volt"]):
         self.dc_output(value, compliance=compliance, type_str=type_str)
+        self.output_target = convert_unit(value, "")[0]
 
     def dc_output(self, value: float | str, *, compliance: float | str, type_str: Literal["curr", "volt"]):
         value = convert_unit(value, "")[0]
         if type_str == "curr":
             self.meter.mode("CURR")
             self.meter.rangei(value / 0.7)
+            if compliance is None:
+                compliance = value * 1000
             self.meter.compliancev(convert_unit(compliance, "A")[0])
             self.meter.curr(value)
 
         elif type_str == "volt":
             self.meter.mode("VOLT")
             self.meter.rangev(value / 0.7)
+            if compliance is None:
+                compliance = value / 1000
             self.meter.compliancei(convert_unit(compliance, "V")[0])
             self.meter.volt(value)
 
         self.info_dict["output_type"] = type_str
-        self.switch_output("on")
+        self.output_switch("on")
 
     def shutdown(self):
         self.meter.curr(0)
         self.meter.volt(0)
-        self.switch_output("off")
+        self.output_switch("off")
 
 
 """
@@ -818,7 +890,7 @@ class ITCs(ITC):
     There are two ITC503 incorporated in the setup, named up and down. The up one measures the temperature of the heat switch(up R1), PT2(up R2), leaving R3 no specific meaning. The down one measures the temperature of the sorb(down R1), POT LOW(down R2), POT HIGH(down R3).
     """
 
-    def __init__(self, address_up="GPIB0::23::INSTR", address_down="GPIB0::24::INSTR", clear_buffer=True):
+    def __init__(self, address_up: str = "GPIB0::23::INSTR", address_down: str = "GPIB0::24::INSTR", clear_buffer=True):
         self.itc_up = ITC503(address_up, clear_buffer=clear_buffer)
         self.itc_down = ITC503(address_down, clear_buffer=clear_buffer)
 

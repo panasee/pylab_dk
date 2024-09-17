@@ -5,7 +5,7 @@
 initialzed right before the measurement, as there may be a long time between loading and measuremnt, leading to
 possibilities of parameter changing"""
 import copy
-from typing import Literal, Generator
+from typing import Literal, Generator, Optional
 import time
 import datetime
 import gc
@@ -20,7 +20,7 @@ from pylab_dk.file_organizer import print_help_if_needed, FileOrganizer
 from pylab_dk.data_plot import DataPlot
 from pylab_dk.constants import convert_unit, print_progress_bar, gen_seq, constant_generator, \
     combined_generator_list
-from pylab_dk.equip_wrapper import ITC, ITCs, ITCMercury, WrapperSR830, Wrapper2400, Wrapper6430, Wrapper2182, \
+from pylab_dk.equip_wrapper import ITCs, ITCMercury, WrapperSR830, Wrapper2400, Wrapper6430, Wrapper2182, \
     Wrapper6221, Meter, SourceMeter
 
 
@@ -40,7 +40,7 @@ class MeasureManager(DataPlot):
             "6221": Wrapper6221,
             "sr830": WrapperSR830
         }
-        self.instrs = {}
+        self.instrs: dict[str, list[Meter] | ITCs | OxfordMercuryiPS | ITCMercury] = {}
         # load params for plotting in measurement
         DataPlot.load_settings(False, False)
 
@@ -59,7 +59,7 @@ class MeasureManager(DataPlot):
 
         self.instrs[meter_no] = []
         for addr in address:
-            self.instrs[meter_no].append(self.meter_wrapper_dict[meter_no](address))
+            self.instrs[meter_no].append(self.meter_wrapper_dict[meter_no](addr))
             self.instrs[meter_no][-1].setup()
 
     def load_ITC503(self, gpib_up: str, gpib_down: str) -> None:
@@ -67,7 +67,8 @@ class MeasureManager(DataPlot):
         load ITC503 instruments according to the addresses, store them in self.instrs["itc503"] in corresponding order. Also store the ITC503 instruments in self.instrs["itc"] for convenience to call
 
         Args:
-            addresses (list[str]): the addresses of the ITC503 instruments (take care of the order)
+            gpib_up (str): the address of the upper ITC503
+            gpib_down (str): the address of the lower ITC503
         """
         self.instrs["itc503"] = ITCs(gpib_up, gpib_down)
         self.instrs["itc"] = self.instrs["itc503"]
@@ -517,392 +518,392 @@ class MeasureManager(DataPlot):
             "mag_vary": None if "B" not in vary_mod else mag_vary,
         }
 
-##TODO: wait to remove ##
+    ##TODO: wait to remove ##
 
-#    def measure_IV_2terminal(self, v_max: float = 1E-4, v_step: float = 1E-5, curr_compliance: float = 1E-6,
-#                             mode: Literal["0-max-0", "0--max-max-0"] = "0-max-0", *,
-#                             meter_name=Literal["2400", "6430"], test: bool = True,
-#                             source: int = None, drain: int = None, temp: int = None, tmpfolder: str = None) -> None:
-#        """
-#        Measure the IV curve using Keithley 6430 to test the contacts. No file will be saved if test is True
-#        """
-#        measure_delay = 0.3  # [s]
-#        instr = self.instrs[meter_name][0]
-#        if v_max > 200:
-#            raise ValueError("The maximum voltage is too high")
-#        #tmp_df = pd.DataFrame(columns=["V","V_sensed", "I", "R"])
-#        tmp_df = pd.DataFrame(columns=["V", "I"])
-#        self.live_plot_init(1, 1, 1, 600, 1400, titles=[["IV 6430"]], axes_labels=[[[r"Voltage (V)", r"Current (A)"]]])
-#
-#        if mode == "0-max-0":
-#            v_array = list(MeasureManager.sweep_values(0, v_max, v_step, "start-end-start"))
-#        elif mode == "0--max-max-0":
-#            v_array = list(MeasureManager.sweep_values(-v_max, v_max, v_step, "0-start-end-0"))
-#        else:
-#            raise ValueError("Mode not recognized")
-#        tmp_df["V"] = v_array
-#        i_array = np.zeros_like(v_array)
-#
-#        try:
-#            for ii, v in enumerate(v_array):
-#                instr.uni_output(v, compliance=curr_compliance, type_str="volt")
-#                time.sleep(measure_delay)
-#                i_array[ii] = instr.sense(type_str="curr")
-#                self.live_plot_update(0, 0, 0, tmp_df["V"][:ii + 1], i_array[:ii + 1])
-#
-#            tmp_df["I"] = i_array
-#        except KeyboardInterrupt:
-#            print("Measurement interrupted")
-#        finally:
-#            instr.output_enabled(False)
-#            if not test:
-#                file_path = self.get_filepath("IV__2-terminal", v_max, v_step, source, drain, mode, temp,
-#                                              tmpfolder=tmpfolder)
-#                file_path.parent.mkdir(parents=True, exist_ok=True)
-#                tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#
-#    @print_help_if_needed
-#    def measure_VB_SR830(self, measure_mods: tuple[str], *var_tuple: float | str, source: Literal["sr830", "6221"],
-#                         resistor: float = None) -> None:
-#        """
-#        measure voltage signal of constant current under different temperature (continuously changing).
-#
-#        Args:
-#            measure_mods (str): the full name of the measurement
-#            var_tuple (tuple): the variables of the measurement, use "-h" to see the available options
-#            source (Literal["sr830","6221"]): the source of the measurement
-#            resistor (float): the resistance of the resistor, used only for sr830 source to calculate the voltage
-#        """
-#        file_path = self.get_filepath(measure_mods, *var_tuple)
-#        file_path.parent.mkdir(parents=True, exist_ok=True)
-#        self.add_measurement(*measure_mods)
-#        sub_type = FileOrganizer.measurename_decom(measure_mods)[-1]
-#        fast = False
-#        if var_tuple[2] < 2:
-#            raise ValueError("npts should be no less than 2")
-#        elif var_tuple[2] == 2:
-#            fast = True
-#        curr = convert_unit(var_tuple[3], "A")[0]
-#        print(f"Filename is: {file_path.name}")
-#        print(f"Curr: {curr} A")
-#        print(f"Mag: {var_tuple[0]} -> {var_tuple[1]} T")
-#        print(f"steps: {var_tuple[2] - 1}")
-#        print(f"fast mode: {fast}")
-#        # for two types of measurements, the V1 meter is the same as the 2w meter,
-#        # and the V2 meter is the same as the 1w meter
-#        # so the variable name will not be changed for 2pair measurement
-#        self.print_pairs(sub_type, 0, 1)
-#        B_arr = np.linspace(var_tuple[0], var_tuple[1], var_tuple[2])
-#        freq = var_tuple[4]
-#        tmp_df = pd.DataFrame(columns=["B", "X_2w", "Y_2w", "R_2w", "phi_2w", "X_1w", "Y_1w", "R_1w", "phi_1w", "T"])
-#        out_range = False
-#
-#        meter_2w = self.instrs['sr830'][0]
-#        meter_1w = self.instrs['sr830'][1]
-#        meter_2w.harmonic = 2
-#        meter_1w.harmonic = 1
-#
-#        if "1pair" in sub_type.split("-"):
-#            meter_2w.harmonic = 2
-#            meter_1w.harmonic = 1
-#            self.live_plot_init(3, 2, 2, 600, 1400,
-#                                titles=[["2w", "phi"], ["1w", "phi"], ["T", ""]],
-#                                axes_labels=[[["B (T)", "V2w (V)"], ["B (T)", "phi"]],
-#                                             [["B (T)", "V1w (V)"], ["B (T)", "phi"]],
-#                                             [["t", "B (T)"], ["", ""]]],
-#                                line_labels=[[["X", "Y"], ["", ""]],
-#                                             [["X", "Y"], ["", ""]],
-#                                             [["", ""], ["", ""]]])
-#        elif "2pair" in sub_type.split("-"):
-#            self.live_plot_init(3, 2, 2, 600, 1400,
-#                                titles=[["V1", "phi"], ["V1", "phi"], ["T", ""]],
-#                                axes_labels=[[["B (T)", "V1 (V)"], ["B (T)", "phi"]],
-#                                             [["B (T)", "V2 (V)"], ["B (T)", "phi"]],
-#                                             [["t", "B (T)"], ["", ""]]],
-#                                line_labels=[[["X", "Y"], ["", ""]],
-#                                             [["X", "Y"], ["", ""]],
-#                                             [["", ""], ["", ""]]])
-#        if source == "sr830":
-#            meter_1w.reference_source_trigger = "POS EDGE"
-#            meter_2w.reference_source_trigger = "SINE"
-#            meter_2w.reference_source = "Internal"
-#            meter_2w.frequency = freq
-#            if resistor is None:
-#                raise ValueError("resistor is needed for sr830 source")
-#        elif source == "6221":
-#            # 6221 use half peak-to-peak voltage as amplitude
-#            curr_p2p = curr * np.sqrt(2)
-#            source_6221 = self.instrs["6221"]
-#            self.setup_6221()
-#            source_6221.source_compliance = curr_p2p * 1000  # compliance voltage
-#            source_6221.source_range = curr_p2p / 0.6
-#            print(f"Keithley 6221 source range is set to {curr_p2p / 0.6} A")
-#            source_6221.waveform_frequency = freq
-#            meter_1w.reference_source_trigger = "POS EDGE"
-#            meter_2w.reference_source_trigger = "POS EDGE"
-#        try:
-#            if source == "sr830":
-#                for i in np.arange(0, curr * resistor, 0.02):
-#                    meter_2w.sine_voltage = i
-#                    time.sleep(0.5)
-#                meter_2w.sine_voltage = curr * resistor
-#            elif source == "6221":
-#                source_6221.waveform_abort()
-#                source_6221.waveform_amplitude = curr_p2p
-#                source_6221.waveform_arm()
-#                source_6221.waveform_start()
-#
-#            time_arr = []
-#            if not fast:
-#                for i, b_i in enumerate(B_arr):
-#                    self.ramp_magfield(b_i, wait=True)
-#                    if meter_1w.is_out_of_range():
-#                        out_range = True
-#                    elif meter_2w.is_out_of_range():
-#                        out_range = True
-#                    list_2w = meter_2w.snap("X", "Y", "R", "THETA")
-#                    list_1w = meter_1w.snap("X", "Y", "R", "THETA")
-#                    temp = self.instrs["itc"].temperature
-#                    list_tot = [b_i] + list_2w + list_1w + [temp]
-#                    print(f"B: {list_tot[0]:.4f} T\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}\t T: {list_tot[-1]}")
-#                    tmp_df.loc[len(tmp_df)] = list_tot
-#                    time_arr.append(datetime.datetime.now())
-#                    self.live_plot_update([0, 0, 0, 1, 1, 1, 2],
-#                                          [0, 0, 1, 0, 0, 1, 0],
-#                                          [0, 1, 0, 0, 1, 0, 0],
-#                                          [tmp_df["B"]] * 6 + [time_arr],
-#                                          np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w", "T"]]).T)
-#                    if i % 3 == 0:
-#                        tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#            if fast:
-#                i = 0
-#                counter = 0
-#                #self.ramp_magfield(B_arr[0], wait=True)
-#                self.ramp_magfield(B_arr[1], wait=False)
-#                while counter < 300:
-#                    i += 1
-#                    if meter_1w.is_out_of_range():
-#                        out_range = True
-#                    elif meter_2w.is_out_of_range():
-#                        out_range = True
-#                    list_2w = meter_2w.snap("X", "Y", "R", "THETA")
-#                    list_1w = meter_1w.snap("X", "Y", "R", "THETA")
-#                    temp = self.instrs["itc"].temperature
-#                    B_now_z = self.instrs["ips"].z_measured()
-#                    list_tot = [B_now_z] + list_2w + list_1w + [temp]
-#                    time_arr.append(datetime.datetime.now())
-#                    print(f"B: {list_tot[0]:.4f} T\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}\t T: {list_tot[-1]}")
-#                    tmp_df.loc[len(tmp_df)] = list_tot
-#                    self.live_plot_update([0, 0, 0, 1, 1, 1, 2],
-#                                          [0, 0, 1, 0, 0, 1, 0],
-#                                          [0, 1, 0, 0, 1, 0, 0],
-#                                          [tmp_df["B"]] * 6 + [time_arr],
-#                                          np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w", "T"]]).T)
-#                    if i % 7 == 0:
-#                        tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#                    time.sleep(1)
-#
-#                    if abs(self.instrs["ips"].z_measured() - var_tuple[1]) < 0.003:
-#                        counter += 1
-#                    else:
-#                        counter = 0
-#            self.dfs["VB"] = tmp_df.copy()
-#            # rename the columns for compatibility with the plotting function
-#            self.set_unit({"I": "uA", "V": "uV"})
-#            #self.df_plot_nonlinear(handlers=(ax[1],phi[1],ax[0],phi[0]))
-#            if out_range:
-#                print("out-range happened, rerun")
-#        except KeyboardInterrupt:
-#            print("Measurement interrupted")
-#        finally:
-#            tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#            if source == "sr830":
-#                meter_2w.sine_voltage = 0
-#            if source == "6221":
-#                source_6221.shutdown()
-#
-#    @print_help_if_needed
-#    def measure_VT_SR830(self, measurename_all, *var_tuple, source: Literal["sr830", "6221"], resistor: float = None,
-#                         stability_counter: int = 120, thermalize_counter: int = 120, ramp_rate: float = 5) -> None:
-#        """
-#        measure voltage signal of constant current under different temperature (continuously changing).
-#        NOTE: set npts to 2 to do fast ramping.
-#        The normal ramping record data at every temperature point after it's been stablized and thermalized, while the fast ramping record according to time on the way
-#
-#        Args:
-#            measurename_all (str): the full name of the measurement
-#            var_tuple (tuple): the variables of the measurement, use "-h" to see the available options
-#            source (Literal["sr830","6221"]): the source of the measurement
-#            resistor (float): the resistance of the resistor, used only for sr830 source to calculate the voltage
-#            stability_counter (int, [s]): the counter for the stability of the temperature
-#            thermalize_counter (int, [s]): the counter for the thermalization of the temperature
-#            ramp_rate (float, [K/min]): the rate of the temperature ramping
-#        """
-#        sub_type = FileOrganizer.measurename_decom(measurename_all)[-1]
-#        fast = False
-#        if var_tuple[2] < 2:
-#            raise ValueError("npts should be no less than 2")
-#        elif var_tuple[2] == 2:
-#            fast = True
-#        file_path = self.get_filepath(measurename_all, *var_tuple)
-#        file_path.parent.mkdir(parents=True, exist_ok=True)
-#        self.add_measurement(measurename_all)
-#        curr = convert_unit(var_tuple[3], "A")[0]
-#        print(f"Filename is: {file_path.name}")
-#        print(f"Curr: {curr} A")
-#        print(f"Temperature: {var_tuple[0]} -> {var_tuple[1]} K")
-#        print(f"steps: {var_tuple[2] - 1}")
-#        print(f"fast mode: {fast}")
-#        # for two types of measurements, the V1 meter is the same as the 2w meter,
-#        # and the V2 meter is the same as the 1w meter
-#        # so the variable name will not be changed for 2pair measurement
-#        if "1pair" in sub_type.split("-"):
-#            print(f"2w meter: {self.instrs['sr830'][0].adapter}")
-#            print(f"1w meter: {self.instrs['sr830'][1].adapter}")
-#        elif "2pair" in sub_type.split("-"):
-#            print("===========================================")
-#            print(f"V1 meter: {self.instrs['sr830'][0].adapter}\t ORDER: {self.instrs['sr830'][0].harmonic}")
-#            print(f"V2 meter: {self.instrs['sr830'][1].adapter}\t ORDER: {self.instrs['sr830'][1].harmonic}")
-#            print("===========================================")
-#        T_arr = np.linspace(var_tuple[0], var_tuple[1], var_tuple[2])
-#        freq = var_tuple[4]
-#        tmp_df = pd.DataFrame(columns=["T", "X_2w", "Y_2w", "R_2w", "phi_2w", "X_1w", "Y_1w", "R_1w", "phi_1w", "curr"])
-#        out_range = False
-#
-#        self.setup_SR830()
-#        meter_2w = self.instrs['sr830'][0]
-#        meter_1w = self.instrs['sr830'][1]
-#        if "1pair" in sub_type.split("-"):
-#            meter_2w.harmonic = 2
-#            meter_1w.harmonic = 1
-#            self.live_plot_init(3, 2, 2, 600, 1400,
-#                                titles=[["2w", "phi"], ["1w", "phi"], ["T", ""]],
-#                                axes_labels=[[["T (K)", "V2w (V)"], ["T (K)", "phi"]],
-#                                             [["T (K)", "V1w (V)"], ["T (K)", "phi"]],
-#                                             [["t(min)", "T (K)"], ["", ""]]],
-#                                line_labels=[[["X", "Y"], ["", ""]],
-#                                             [["X", "Y"], ["", ""]],
-#                                             [["", ""], ["", ""]]])
-#        elif "2pair" in sub_type.split("-"):
-#            self.live_plot_init(3, 2, 2, 600, 1400,
-#                                titles=[["V1", "phi"], ["V1", "phi"], ["T", ""]],
-#                                axes_labels=[[["T (K)", "V1 (V)"], ["T (K)", "phi"]],
-#                                             [["T (K)", "V2 (V)"], ["T (K)", "phi"]],
-#                                             [["t(min)", "T (K)"], ["", ""]]],
-#                                line_labels=[[["X", "Y"], ["", ""]],
-#                                             [["X", "Y"], ["", ""]],
-#                                             [["", ""], ["", ""]]])
-#        if source == "sr830":
-#            meter_1w.reference_source_trigger = "POS EDGE"
-#            meter_2w.reference_source_trigger = "SINE"
-#            meter_2w.reference_source = "Internal"
-#            meter_2w.frequency = freq
-#            if resistor is None:
-#                raise ValueError("resistor is needed for sr830 source")
-#        elif source == "6221":
-#            # 6221 use half peak-to-peak voltage as amplitude
-#            curr_p2p = curr * np.sqrt(2)
-#            source_6221 = self.instrs["6221"]
-#            self.setup_6221()
-#            source_6221.source_compliance = curr_p2p * 10000  # compliance voltage
-#            source_6221.source_range = curr_p2p / 0.6
-#            print(f"Keithley 6221 source range is set to {curr_p2p / 0.6} A")
-#            source_6221.waveform_frequency = freq
-#            meter_1w.reference_source_trigger = "POS EDGE"
-#            meter_2w.reference_source_trigger = "POS EDGE"
-#        try:
-#            if source == "sr830":
-#                for i in np.arange(0, curr * resistor, 0.02):
-#                    meter_2w.sine_voltage = i
-#                    time.sleep(0.39)
-#                meter_2w.sine_voltage = curr * resistor
-#            elif source == "6221":
-#                source_6221.waveform_abort()
-#                source_6221.waveform_amplitude = curr_p2p
-#                source_6221.waveform_arm()
-#                source_6221.waveform_start()
-#
-#            time_arr = []
-#            if not fast:
-#                for i, temp_i in enumerate(T_arr):
-#                    self.instrs["itc"].ramp_to_temperature(temp_i, ramp_rate=ramp_rate,
-#                                                           stability_counter=stability_counter,
-#                                                           thermalize_counter=thermalize_counter)
-#                    if meter_1w.is_out_of_range():
-#                        out_range = True
-#                    elif meter_2w.is_out_of_range():
-#                        out_range = True
-#                    list_2w = meter_2w.snap("X", "Y", "R", "THETA")
-#                    list_1w = meter_1w.snap("X", "Y", "R", "THETA")
-#                    temp = self.instrs["itc"].temperature
-#                    list_tot = [temp] + list_2w + list_1w + [curr]
-#                    if "1pair" in sub_type.split("-"):
-#                        print(f"T: {list_tot[0]:.2f} K\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}")
-#                    elif sub_type.split("-")[-1] == "2pair":
-#                        print(f"T: {list_tot[0]:.2f} K\t V1: {list_tot[1:5]}\t V2: {list_tot[5:9]}")
-#                    tmp_df.loc[len(tmp_df)] = list_tot
-#                    time_arr.append(datetime.datetime.now())
-#                    self.live_plot_update([0, 0, 0, 1, 1, 1, 2],
-#                                          [0, 0, 1, 0, 0, 1, 0],
-#                                          [0, 1, 0, 0, 1, 0, 0],
-#                                          [tmp_df["T"]] * 6 + [time_arr],
-#                                          np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w", "T"]]).T)
-#                    if i % 3 == 0:
-#                        tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#            if fast:
-#                i = 0
-#                counter = 0
-#                self.instrs["itc"].ramp_to_temperature(var_tuple[0], ramp_rate=ramp_rate, wait=True,
-#                                                       stability_counter=stability_counter,
-#                                                       thermalize_counter=thermalize_counter)
-#                self.instrs["itc"].ramp_to_temperature(var_tuple[1], ramp_rate=ramp_rate, wait=False,
-#                                                       stability_counter=stability_counter,
-#                                                       thermalize_counter=thermalize_counter)
-#                # assume 600s to end the RT curve
-#                while counter < 600:
-#                    i += 1
-#                    if meter_1w.is_out_of_range():
-#                        out_range = True
-#                    elif meter_2w.is_out_of_range():
-#                        out_range = True
-#                    list_2w = meter_2w.snap("X", "Y", "R", "THETA")
-#                    list_1w = meter_1w.snap("X", "Y", "R", "THETA")
-#                    temp = self.instrs["itc"].temperature
-#                    list_tot = [temp] + list_2w + list_1w + [curr]
-#                    if "1pair" in sub_type.split("-"):
-#                        print(f"T: {list_tot[0]:.2f} K\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}")
-#                    elif "2pair" in sub_type.split("-"):
-#                        print(f"T: {list_tot[0]:.2f} K\t V1: {list_tot[1:5]}\t V2: {list_tot[5:9]}")
-#                    tmp_df.loc[len(tmp_df)] = list_tot
-#                    time_arr.append(datetime.datetime.now())
-#                    self.live_plot_update([0, 0, 0, 1, 1, 1, 2],
-#                                          [0, 0, 1, 0, 0, 1, 0],
-#                                          [0, 1, 0, 0, 1, 0, 0],
-#                                          [tmp_df["T"]] * 6 + [time_arr],
-#                                          np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w", "T"]]).T)
-#                    if i % 7 == 0:
-#                        tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#                    time.sleep(1)
-#
-#                    if abs(temp - var_tuple[1]) < ITC.dynamic_delta(var_tuple[1], 0.01):
-#                        counter += 1
-#                    else:
-#                        counter = 0
-#            self.dfs["VT"] = tmp_df.copy()
-#            # rename the columns for compatibility with the plotting function
-#            self.rename_columns("VT", {"Y_2w": "V2w", "X_1w": "V1w"})
-#            self.set_unit({"I": "uA", "V": "uV"})
-#            #self.df_plot_nonlinear(handlers=(ax[1],phi[1],ax[0],phi[0]))
-#            if out_range:
-#                print("out-range happened, rerun")
-#        except KeyboardInterrupt:
-#            print("Measurement interrupted")
-#        finally:
-#            tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#            if source == "sr830":
-#                meter_2w.sine_voltage = 0
-#            if source == "6221":
-#                source_6221.shutdown()
+    #    def measure_IV_2terminal(self, v_max: float = 1E-4, v_step: float = 1E-5, curr_compliance: float = 1E-6,
+    #                             mode: Literal["0-max-0", "0--max-max-0"] = "0-max-0", *,
+    #                             meter_name=Literal["2400", "6430"], test: bool = True,
+    #                             source: int = None, drain: int = None, temp: int = None, tmpfolder: str = None) -> None:
+    #        """
+    #        Measure the IV curve using Keithley 6430 to test the contacts. No file will be saved if test is True
+    #        """
+    #        measure_delay = 0.3  # [s]
+    #        instr = self.instrs[meter_name][0]
+    #        if v_max > 200:
+    #            raise ValueError("The maximum voltage is too high")
+    #        #tmp_df = pd.DataFrame(columns=["V","V_sensed", "I", "R"])
+    #        tmp_df = pd.DataFrame(columns=["V", "I"])
+    #        self.live_plot_init(1, 1, 1, 600, 1400, titles=[["IV 6430"]], axes_labels=[[[r"Voltage (V)", r"Current (A)"]]])
+    #
+    #        if mode == "0-max-0":
+    #            v_array = list(MeasureManager.sweep_values(0, v_max, v_step, "start-end-start"))
+    #        elif mode == "0--max-max-0":
+    #            v_array = list(MeasureManager.sweep_values(-v_max, v_max, v_step, "0-start-end-0"))
+    #        else:
+    #            raise ValueError("Mode not recognized")
+    #        tmp_df["V"] = v_array
+    #        i_array = np.zeros_like(v_array)
+    #
+    #        try:
+    #            for ii, v in enumerate(v_array):
+    #                instr.uni_output(v, compliance=curr_compliance, type_str="volt")
+    #                time.sleep(measure_delay)
+    #                i_array[ii] = instr.sense(type_str="curr")
+    #                self.live_plot_update(0, 0, 0, tmp_df["V"][:ii + 1], i_array[:ii + 1])
+    #
+    #            tmp_df["I"] = i_array
+    #        except KeyboardInterrupt:
+    #            print("Measurement interrupted")
+    #        finally:
+    #            instr.output_enabled(False)
+    #            if not test:
+    #                file_path = self.get_filepath("IV__2-terminal", v_max, v_step, source, drain, mode, temp,
+    #                                              tmpfolder=tmpfolder)
+    #                file_path.parent.mkdir(parents=True, exist_ok=True)
+    #                tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #
+    #    @print_help_if_needed
+    #    def measure_VB_SR830(self, measure_mods: tuple[str], *var_tuple: float | str, source: Literal["sr830", "6221"],
+    #                         resistor: float = None) -> None:
+    #        """
+    #        measure voltage signal of constant current under different temperature (continuously changing).
+    #
+    #        Args:
+    #            measure_mods (str): the full name of the measurement
+    #            var_tuple (tuple): the variables of the measurement, use "-h" to see the available options
+    #            source (Literal["sr830","6221"]): the source of the measurement
+    #            resistor (float): the resistance of the resistor, used only for sr830 source to calculate the voltage
+    #        """
+    #        file_path = self.get_filepath(measure_mods, *var_tuple)
+    #        file_path.parent.mkdir(parents=True, exist_ok=True)
+    #        self.add_measurement(*measure_mods)
+    #        sub_type = FileOrganizer.measurename_decom(measure_mods)[-1]
+    #        fast = False
+    #        if var_tuple[2] < 2:
+    #            raise ValueError("npts should be no less than 2")
+    #        elif var_tuple[2] == 2:
+    #            fast = True
+    #        curr = convert_unit(var_tuple[3], "A")[0]
+    #        print(f"Filename is: {file_path.name}")
+    #        print(f"Curr: {curr} A")
+    #        print(f"Mag: {var_tuple[0]} -> {var_tuple[1]} T")
+    #        print(f"steps: {var_tuple[2] - 1}")
+    #        print(f"fast mode: {fast}")
+    #        # for two types of measurements, the V1 meter is the same as the 2w meter,
+    #        # and the V2 meter is the same as the 1w meter
+    #        # so the variable name will not be changed for 2pair measurement
+    #        self.print_pairs(sub_type, 0, 1)
+    #        B_arr = np.linspace(var_tuple[0], var_tuple[1], var_tuple[2])
+    #        freq = var_tuple[4]
+    #        tmp_df = pd.DataFrame(columns=["B", "X_2w", "Y_2w", "R_2w", "phi_2w", "X_1w", "Y_1w", "R_1w", "phi_1w", "T"])
+    #        out_range = False
+    #
+    #        meter_2w = self.instrs['sr830'][0]
+    #        meter_1w = self.instrs['sr830'][1]
+    #        meter_2w.harmonic = 2
+    #        meter_1w.harmonic = 1
+    #
+    #        if "1pair" in sub_type.split("-"):
+    #            meter_2w.harmonic = 2
+    #            meter_1w.harmonic = 1
+    #            self.live_plot_init(3, 2, 2, 600, 1400,
+    #                                titles=[["2w", "phi"], ["1w", "phi"], ["T", ""]],
+    #                                axes_labels=[[["B (T)", "V2w (V)"], ["B (T)", "phi"]],
+    #                                             [["B (T)", "V1w (V)"], ["B (T)", "phi"]],
+    #                                             [["t", "B (T)"], ["", ""]]],
+    #                                line_labels=[[["X", "Y"], ["", ""]],
+    #                                             [["X", "Y"], ["", ""]],
+    #                                             [["", ""], ["", ""]]])
+    #        elif "2pair" in sub_type.split("-"):
+    #            self.live_plot_init(3, 2, 2, 600, 1400,
+    #                                titles=[["V1", "phi"], ["V1", "phi"], ["T", ""]],
+    #                                axes_labels=[[["B (T)", "V1 (V)"], ["B (T)", "phi"]],
+    #                                             [["B (T)", "V2 (V)"], ["B (T)", "phi"]],
+    #                                             [["t", "B (T)"], ["", ""]]],
+    #                                line_labels=[[["X", "Y"], ["", ""]],
+    #                                             [["X", "Y"], ["", ""]],
+    #                                             [["", ""], ["", ""]]])
+    #        if source == "sr830":
+    #            meter_1w.reference_source_trigger = "POS EDGE"
+    #            meter_2w.reference_source_trigger = "SINE"
+    #            meter_2w.reference_source = "Internal"
+    #            meter_2w.frequency = freq
+    #            if resistor is None:
+    #                raise ValueError("resistor is needed for sr830 source")
+    #        elif source == "6221":
+    #            # 6221 use half peak-to-peak voltage as amplitude
+    #            curr_p2p = curr * np.sqrt(2)
+    #            source_6221 = self.instrs["6221"]
+    #            self.setup_6221()
+    #            source_6221.source_compliance = curr_p2p * 1000  # compliance voltage
+    #            source_6221.source_range = curr_p2p / 0.6
+    #            print(f"Keithley 6221 source range is set to {curr_p2p / 0.6} A")
+    #            source_6221.waveform_frequency = freq
+    #            meter_1w.reference_source_trigger = "POS EDGE"
+    #            meter_2w.reference_source_trigger = "POS EDGE"
+    #        try:
+    #            if source == "sr830":
+    #                for i in np.arange(0, curr * resistor, 0.02):
+    #                    meter_2w.sine_voltage = i
+    #                    time.sleep(0.5)
+    #                meter_2w.sine_voltage = curr * resistor
+    #            elif source == "6221":
+    #                source_6221.waveform_abort()
+    #                source_6221.waveform_amplitude = curr_p2p
+    #                source_6221.waveform_arm()
+    #                source_6221.waveform_start()
+    #
+    #            time_arr = []
+    #            if not fast:
+    #                for i, b_i in enumerate(B_arr):
+    #                    self.ramp_magfield(b_i, wait=True)
+    #                    if meter_1w.is_out_of_range():
+    #                        out_range = True
+    #                    elif meter_2w.is_out_of_range():
+    #                        out_range = True
+    #                    list_2w = meter_2w.snap("X", "Y", "R", "THETA")
+    #                    list_1w = meter_1w.snap("X", "Y", "R", "THETA")
+    #                    temp = self.instrs["itc"].temperature
+    #                    list_tot = [b_i] + list_2w + list_1w + [temp]
+    #                    print(f"B: {list_tot[0]:.4f} T\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}\t T: {list_tot[-1]}")
+    #                    tmp_df.loc[len(tmp_df)] = list_tot
+    #                    time_arr.append(datetime.datetime.now())
+    #                    self.live_plot_update([0, 0, 0, 1, 1, 1, 2],
+    #                                          [0, 0, 1, 0, 0, 1, 0],
+    #                                          [0, 1, 0, 0, 1, 0, 0],
+    #                                          [tmp_df["B"]] * 6 + [time_arr],
+    #                                          np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w", "T"]]).T)
+    #                    if i % 3 == 0:
+    #                        tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #            if fast:
+    #                i = 0
+    #                counter = 0
+    #                #self.ramp_magfield(B_arr[0], wait=True)
+    #                self.ramp_magfield(B_arr[1], wait=False)
+    #                while counter < 300:
+    #                    i += 1
+    #                    if meter_1w.is_out_of_range():
+    #                        out_range = True
+    #                    elif meter_2w.is_out_of_range():
+    #                        out_range = True
+    #                    list_2w = meter_2w.snap("X", "Y", "R", "THETA")
+    #                    list_1w = meter_1w.snap("X", "Y", "R", "THETA")
+    #                    temp = self.instrs["itc"].temperature
+    #                    B_now_z = self.instrs["ips"].z_measured()
+    #                    list_tot = [B_now_z] + list_2w + list_1w + [temp]
+    #                    time_arr.append(datetime.datetime.now())
+    #                    print(f"B: {list_tot[0]:.4f} T\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}\t T: {list_tot[-1]}")
+    #                    tmp_df.loc[len(tmp_df)] = list_tot
+    #                    self.live_plot_update([0, 0, 0, 1, 1, 1, 2],
+    #                                          [0, 0, 1, 0, 0, 1, 0],
+    #                                          [0, 1, 0, 0, 1, 0, 0],
+    #                                          [tmp_df["B"]] * 6 + [time_arr],
+    #                                          np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w", "T"]]).T)
+    #                    if i % 7 == 0:
+    #                        tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #                    time.sleep(1)
+    #
+    #                    if abs(self.instrs["ips"].z_measured() - var_tuple[1]) < 0.003:
+    #                        counter += 1
+    #                    else:
+    #                        counter = 0
+    #            self.dfs["VB"] = tmp_df.copy()
+    #            # rename the columns for compatibility with the plotting function
+    #            self.set_unit({"I": "uA", "V": "uV"})
+    #            #self.df_plot_nonlinear(handlers=(ax[1],phi[1],ax[0],phi[0]))
+    #            if out_range:
+    #                print("out-range happened, rerun")
+    #        except KeyboardInterrupt:
+    #            print("Measurement interrupted")
+    #        finally:
+    #            tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #            if source == "sr830":
+    #                meter_2w.sine_voltage = 0
+    #            if source == "6221":
+    #                source_6221.shutdown()
+    #
+    #    @print_help_if_needed
+    #    def measure_VT_SR830(self, measurename_all, *var_tuple, source: Literal["sr830", "6221"], resistor: float = None,
+    #                         stability_counter: int = 120, thermalize_counter: int = 120, ramp_rate: float = 5) -> None:
+    #        """
+    #        measure voltage signal of constant current under different temperature (continuously changing).
+    #        NOTE: set npts to 2 to do fast ramping.
+    #        The normal ramping record data at every temperature point after it's been stablized and thermalized, while the fast ramping record according to time on the way
+    #
+    #        Args:
+    #            measurename_all (str): the full name of the measurement
+    #            var_tuple (tuple): the variables of the measurement, use "-h" to see the available options
+    #            source (Literal["sr830","6221"]): the source of the measurement
+    #            resistor (float): the resistance of the resistor, used only for sr830 source to calculate the voltage
+    #            stability_counter (int, [s]): the counter for the stability of the temperature
+    #            thermalize_counter (int, [s]): the counter for the thermalization of the temperature
+    #            ramp_rate (float, [K/min]): the rate of the temperature ramping
+    #        """
+    #        sub_type = FileOrganizer.measurename_decom(measurename_all)[-1]
+    #        fast = False
+    #        if var_tuple[2] < 2:
+    #            raise ValueError("npts should be no less than 2")
+    #        elif var_tuple[2] == 2:
+    #            fast = True
+    #        file_path = self.get_filepath(measurename_all, *var_tuple)
+    #        file_path.parent.mkdir(parents=True, exist_ok=True)
+    #        self.add_measurement(measurename_all)
+    #        curr = convert_unit(var_tuple[3], "A")[0]
+    #        print(f"Filename is: {file_path.name}")
+    #        print(f"Curr: {curr} A")
+    #        print(f"Temperature: {var_tuple[0]} -> {var_tuple[1]} K")
+    #        print(f"steps: {var_tuple[2] - 1}")
+    #        print(f"fast mode: {fast}")
+    #        # for two types of measurements, the V1 meter is the same as the 2w meter,
+    #        # and the V2 meter is the same as the 1w meter
+    #        # so the variable name will not be changed for 2pair measurement
+    #        if "1pair" in sub_type.split("-"):
+    #            print(f"2w meter: {self.instrs['sr830'][0].adapter}")
+    #            print(f"1w meter: {self.instrs['sr830'][1].adapter}")
+    #        elif "2pair" in sub_type.split("-"):
+    #            print("===========================================")
+    #            print(f"V1 meter: {self.instrs['sr830'][0].adapter}\t ORDER: {self.instrs['sr830'][0].harmonic}")
+    #            print(f"V2 meter: {self.instrs['sr830'][1].adapter}\t ORDER: {self.instrs['sr830'][1].harmonic}")
+    #            print("===========================================")
+    #        T_arr = np.linspace(var_tuple[0], var_tuple[1], var_tuple[2])
+    #        freq = var_tuple[4]
+    #        tmp_df = pd.DataFrame(columns=["T", "X_2w", "Y_2w", "R_2w", "phi_2w", "X_1w", "Y_1w", "R_1w", "phi_1w", "curr"])
+    #        out_range = False
+    #
+    #        self.setup_SR830()
+    #        meter_2w = self.instrs['sr830'][0]
+    #        meter_1w = self.instrs['sr830'][1]
+    #        if "1pair" in sub_type.split("-"):
+    #            meter_2w.harmonic = 2
+    #            meter_1w.harmonic = 1
+    #            self.live_plot_init(3, 2, 2, 600, 1400,
+    #                                titles=[["2w", "phi"], ["1w", "phi"], ["T", ""]],
+    #                                axes_labels=[[["T (K)", "V2w (V)"], ["T (K)", "phi"]],
+    #                                             [["T (K)", "V1w (V)"], ["T (K)", "phi"]],
+    #                                             [["t(min)", "T (K)"], ["", ""]]],
+    #                                line_labels=[[["X", "Y"], ["", ""]],
+    #                                             [["X", "Y"], ["", ""]],
+    #                                             [["", ""], ["", ""]]])
+    #        elif "2pair" in sub_type.split("-"):
+    #            self.live_plot_init(3, 2, 2, 600, 1400,
+    #                                titles=[["V1", "phi"], ["V1", "phi"], ["T", ""]],
+    #                                axes_labels=[[["T (K)", "V1 (V)"], ["T (K)", "phi"]],
+    #                                             [["T (K)", "V2 (V)"], ["T (K)", "phi"]],
+    #                                             [["t(min)", "T (K)"], ["", ""]]],
+    #                                line_labels=[[["X", "Y"], ["", ""]],
+    #                                             [["X", "Y"], ["", ""]],
+    #                                             [["", ""], ["", ""]]])
+    #        if source == "sr830":
+    #            meter_1w.reference_source_trigger = "POS EDGE"
+    #            meter_2w.reference_source_trigger = "SINE"
+    #            meter_2w.reference_source = "Internal"
+    #            meter_2w.frequency = freq
+    #            if resistor is None:
+    #                raise ValueError("resistor is needed for sr830 source")
+    #        elif source == "6221":
+    #            # 6221 use half peak-to-peak voltage as amplitude
+    #            curr_p2p = curr * np.sqrt(2)
+    #            source_6221 = self.instrs["6221"]
+    #            self.setup_6221()
+    #            source_6221.source_compliance = curr_p2p * 10000  # compliance voltage
+    #            source_6221.source_range = curr_p2p / 0.6
+    #            print(f"Keithley 6221 source range is set to {curr_p2p / 0.6} A")
+    #            source_6221.waveform_frequency = freq
+    #            meter_1w.reference_source_trigger = "POS EDGE"
+    #            meter_2w.reference_source_trigger = "POS EDGE"
+    #        try:
+    #            if source == "sr830":
+    #                for i in np.arange(0, curr * resistor, 0.02):
+    #                    meter_2w.sine_voltage = i
+    #                    time.sleep(0.39)
+    #                meter_2w.sine_voltage = curr * resistor
+    #            elif source == "6221":
+    #                source_6221.waveform_abort()
+    #                source_6221.waveform_amplitude = curr_p2p
+    #                source_6221.waveform_arm()
+    #                source_6221.waveform_start()
+    #
+    #            time_arr = []
+    #            if not fast:
+    #                for i, temp_i in enumerate(T_arr):
+    #                    self.instrs["itc"].ramp_to_temperature(temp_i, ramp_rate=ramp_rate,
+    #                                                           stability_counter=stability_counter,
+    #                                                           thermalize_counter=thermalize_counter)
+    #                    if meter_1w.is_out_of_range():
+    #                        out_range = True
+    #                    elif meter_2w.is_out_of_range():
+    #                        out_range = True
+    #                    list_2w = meter_2w.snap("X", "Y", "R", "THETA")
+    #                    list_1w = meter_1w.snap("X", "Y", "R", "THETA")
+    #                    temp = self.instrs["itc"].temperature
+    #                    list_tot = [temp] + list_2w + list_1w + [curr]
+    #                    if "1pair" in sub_type.split("-"):
+    #                        print(f"T: {list_tot[0]:.2f} K\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}")
+    #                    elif sub_type.split("-")[-1] == "2pair":
+    #                        print(f"T: {list_tot[0]:.2f} K\t V1: {list_tot[1:5]}\t V2: {list_tot[5:9]}")
+    #                    tmp_df.loc[len(tmp_df)] = list_tot
+    #                    time_arr.append(datetime.datetime.now())
+    #                    self.live_plot_update([0, 0, 0, 1, 1, 1, 2],
+    #                                          [0, 0, 1, 0, 0, 1, 0],
+    #                                          [0, 1, 0, 0, 1, 0, 0],
+    #                                          [tmp_df["T"]] * 6 + [time_arr],
+    #                                          np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w", "T"]]).T)
+    #                    if i % 3 == 0:
+    #                        tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #            if fast:
+    #                i = 0
+    #                counter = 0
+    #                self.instrs["itc"].ramp_to_temperature(var_tuple[0], ramp_rate=ramp_rate, wait=True,
+    #                                                       stability_counter=stability_counter,
+    #                                                       thermalize_counter=thermalize_counter)
+    #                self.instrs["itc"].ramp_to_temperature(var_tuple[1], ramp_rate=ramp_rate, wait=False,
+    #                                                       stability_counter=stability_counter,
+    #                                                       thermalize_counter=thermalize_counter)
+    #                # assume 600s to end the RT curve
+    #                while counter < 600:
+    #                    i += 1
+    #                    if meter_1w.is_out_of_range():
+    #                        out_range = True
+    #                    elif meter_2w.is_out_of_range():
+    #                        out_range = True
+    #                    list_2w = meter_2w.snap("X", "Y", "R", "THETA")
+    #                    list_1w = meter_1w.snap("X", "Y", "R", "THETA")
+    #                    temp = self.instrs["itc"].temperature
+    #                    list_tot = [temp] + list_2w + list_1w + [curr]
+    #                    if "1pair" in sub_type.split("-"):
+    #                        print(f"T: {list_tot[0]:.2f} K\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}")
+    #                    elif "2pair" in sub_type.split("-"):
+    #                        print(f"T: {list_tot[0]:.2f} K\t V1: {list_tot[1:5]}\t V2: {list_tot[5:9]}")
+    #                    tmp_df.loc[len(tmp_df)] = list_tot
+    #                    time_arr.append(datetime.datetime.now())
+    #                    self.live_plot_update([0, 0, 0, 1, 1, 1, 2],
+    #                                          [0, 0, 1, 0, 0, 1, 0],
+    #                                          [0, 1, 0, 0, 1, 0, 0],
+    #                                          [tmp_df["T"]] * 6 + [time_arr],
+    #                                          np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w", "T"]]).T)
+    #                    if i % 7 == 0:
+    #                        tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #                    time.sleep(1)
+    #
+    #                    if abs(temp - var_tuple[1]) < ITC.dynamic_delta(var_tuple[1], 0.01):
+    #                        counter += 1
+    #                    else:
+    #                        counter = 0
+    #            self.dfs["VT"] = tmp_df.copy()
+    #            # rename the columns for compatibility with the plotting function
+    #            self.rename_columns("VT", {"Y_2w": "V2w", "X_1w": "V1w"})
+    #            self.set_unit({"I": "uA", "V": "uV"})
+    #            #self.df_plot_nonlinear(handlers=(ax[1],phi[1],ax[0],phi[0]))
+    #            if out_range:
+    #                print("out-range happened, rerun")
+    #        except KeyboardInterrupt:
+    #            print("Measurement interrupted")
+    #        finally:
+    #            tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #            if source == "sr830":
+    #                meter_2w.sine_voltage = 0
+    #            if source == "6221":
+    #                source_6221.shutdown()
 
     #@print_help_if_needed
     #def measure_RT_SR830_ITC503(self, measure_mods, *var_tuple, resist: float) -> None:
@@ -976,176 +977,176 @@ class MeasureManager(DataPlot):
     #        tmp_df.to_csv(file_path, sep="\t", index=False)
     #        meter1.sine_voltage = 0
 
-#    @print_help_if_needed
-#    def measure_VI_2182(self, measurename_all, *var_tuple, tmpfolder: str = None, delay: int = 5,
-#                        mode: Literal["0-max-0", "0--max-max-0"] = "0-max-0") -> None:
-#        """
-#        Measure the IV curve using Keithley 2182 to test the contacts. No file will be saved if test is True
-#
-#        Args:
-#            measurename_all (str): the full name of the measurement
-#            var_tuple (tuple): the variables of the measurement, use "-h" to see the available options
-#            tmpfolder (str): the temporary folder to store the data
-#        """
-#        if var_tuple[-2] == "0-max-0" or var_tuple[-2] == "0--max-max-0":
-#            mode = var_tuple[-2]
-#        else:
-#            var_tuple = list(var_tuple)
-#            var_tuple.insert(-1, mode)
-#        file_path = self.get_filepath(measurename_all, *var_tuple, tmpfolder=tmpfolder)
-#        file_path.parent.mkdir(parents=True, exist_ok=True)
-#        self.add_measurement(measurename_all)
-#        curr = convert_unit(var_tuple[0], "A")[0]
-#        print(f"Filename is: {file_path.name}")
-#        print(f"Max Curr: {curr} A")
-#        print(f"steps: {var_tuple[1] - 1}")
-#        curr_arr = np.linspace(0, curr, var_tuple[1])
-#        if mode == "0-max-0":
-#            curr_arr = np.concatenate((curr_arr, curr_arr[::-1]))
-#        elif mode == "0--max-max-0":
-#            curr_arr = np.concatenate((-curr_arr, -curr_arr[::-1], curr_arr, curr_arr[::-1]))
-#        measure_delay = delay  # [s]
-#        tmp_df = pd.DataFrame(columns=["I", "V", "T"])
-#        out_range = False
-#
-#        instr_2182 = self.instrs["2182"]
-#        self.setup_2182()
-#        self.live_plot_init(1, 2, 1, 600, 1400,
-#                            titles=[["IV", "T"]],
-#                            axes_labels=[[["I (A)", "V (V)"], ["t", "T"]]],
-#                            line_labels=[[["", ""], ["", ""]]])
-#
-#        source_6221 = self.instrs["6221"]
-#        self.setup_6221("dc")
-#        #source_6221.source_compliance = curr * 1E4  # compliance voltage
-#        source_6221.source_compliance = 5  # compliance voltage
-#        source_6221.source_range = curr / 0.6
-#        source_6221.source_current = 0
-#        source_6221.enable_source()
-#        try:
-#            for i, c in enumerate(curr_arr):
-#                source_6221.source_current = c
-#                time.sleep(measure_delay)
-#                tmp_df.loc[len(tmp_df)] = [c, instr_2182.voltage, self.instrs["itc"].temperature]
-#                self.live_plot_update(0, 0, 0, [tmp_df["I"]], [tmp_df["V"]])
-#                self.live_plot_update(0, 1, 0, [measure_delay * np.arange(len(tmp_df["T"]))], [tmp_df["T"]])
-#                if i % 10 == 0:
-#                    tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#            self.dfs["IV"] = tmp_df.copy()
-#            self.set_unit({"I": "uA", "V": "uV"})
-#        except KeyboardInterrupt:
-#            print("Measurement interrupted")
-#        finally:
-#            tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#            source_6221.disable_source()
-#            source_6221.shutdown()
-#            instr_2182.shutdown()
-#
-#    @print_help_if_needed
-#    def measure_VI_SR830(self, measurename_all, *var_tuple: int | float | str, tmpfolder: str = None,
-#                         source: Literal["sr830", "6221"], delay: int = 15, offset_6221=0,
-#                         order: tuple[int, int] = (1, 2)) -> None:
-#        """
-#        conduct the 1-pair nonlinear measurement using 2 SR830 meters and store the data in the corresponding file. Using first meter to measure 2w signal and also as the source if appoint SR830 as source. (meters need to be loaded before calling this function). When using Keithley 6221 current source, the max voltage is the compliance voltage and the resistance does not have specific meaning, just used for calculating the current.
-#        appoint the resistor to 1000 when using 6221(just for convenience, no special reason)
-#
-#        Args:
-#            measurename_all (str): the full name of the measurement
-#            var_tuple (any): the variables of the measurement, use "-h" to see the available options
-#            tmpfolder (str): the temporary folder to store the data
-#            source (Literal["sr830", "6221"]): the source of the measurement
-#            delay (int): the delay time between each measurement
-#            offset_6221 (int, [A]): the offset of the 6221 current source
-#        """
-#        file_path = self.get_filepath(measurename_all, *var_tuple, tmpfolder=tmpfolder)
-#        file_path.parent.mkdir(parents=True, exist_ok=True)
-#        if offset_6221 != 0:
-#            file_path = file_path.with_name(file_path.name + f"offset{offset_6221}")
-#        self.add_measurement(measurename_all)
-#        print(f"Filename is: {file_path.name}")
-#        print(f"Max Curr: {var_tuple[0] / var_tuple[1]} A")
-#        print(f"steps: {var_tuple[2] - 1}")
-#        print(f"2w meter: {self.instrs['sr830'][0].adapter}")
-#        print(f"1w meter: {self.instrs['sr830'][1].adapter}")
-#        amp = np.linspace(0, var_tuple[0], var_tuple[2])
-#        freq = var_tuple[3]
-#        resist = var_tuple[1]
-#        measure_delay = delay  # [s]
-#        tmp_df = pd.DataFrame(columns=["curr", "X_2w", "Y_2w", "R_2w", "phi_2w", "X_1w", "Y_1w", "R_1w", "phi_1w", "T"])
-#        out_range = False
-#
-#        self.setup_SR830()
-#        meter_2w = self.instrs['sr830'][0]
-#        meter_1w = self.instrs['sr830'][1]
-#        meter_2w.harmonic = order[1]
-#        meter_1w.harmonic = order[0]
-#
-#        self.live_plot_init(2, 2, 2, 600, 1400,
-#                            titles=[["2w", "phi"], ["1w", "phi"]],
-#                            axes_labels=[[["I (A)", "V2w (V)"], ["I (A)", "phi"]],
-#                                         [["I (A)", "V1w (V)"], ["I (A)", "phi"]]],
-#                            line_labels=[[["X", "Y"], ["", ""]], [["X", "Y"], ["", ""]]])
-#        if source == "sr830":
-#            meter_1w.reference_source_trigger = "POS EDGE"
-#            meter_2w.reference_source_trigger = "SINE"
-#            meter_2w.reference_source = "Internal"
-#            meter_2w.frequency = freq
-#        elif source == "6221":
-#            # 6221 use half peak-to-peak voltage as amplitude
-#            amp *= np.sqrt(2)
-#            source_6221 = self.instrs["6221"]
-#            self.setup_6221(offset=offset_6221)
-#            source_6221.source_compliance = amp[-1] + 0.1
-#            source_6221.source_range = amp[-1] / resist / 0.7
-#            print(f"Keithley 6221 source range is set to {amp[-1] / resist / 0.7} A")
-#            source_6221.waveform_frequency = freq
-#            meter_1w.reference_source_trigger = "POS EDGE"
-#            meter_2w.reference_source_trigger = "POS EDGE"
-#        try:
-#            for i, v in enumerate(amp):
-#                if source == "sr830":
-#                    meter_2w.sine_voltage = v
-#                elif source == "6221":
-#                    source_6221.waveform_abort()
-#                    source_6221.waveform_amplitude = v / resist
-#                    source_6221.waveform_arm()
-#                    source_6221.waveform_start()
-#                time.sleep(measure_delay)
-#                if meter_1w.is_out_of_range():
-#                    out_range = True
-#                if meter_2w.is_out_of_range():
-#                    out_range = True
-#                list_2w = meter_2w.snap("X", "Y", "R", "THETA")
-#                list_1w = meter_1w.snap("X", "Y", "R", "THETA")
-#                temp = self.instrs["itc"].temperature
-#                if source == "sr830":
-#                    list_tot = [v / resist] + list_2w + list_1w + [temp]
-#                if source == "6221":
-#                    list_tot = [v / resist / np.sqrt(2)] + list_2w + list_1w + [temp]
-#                print(
-#                    f"curr: {list_tot[0] * 1E6:.8f} uA\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}\t T: {list_tot[-1]}")
-#                tmp_df.loc[len(tmp_df)] = list_tot
-#                self.live_plot_update([0, 0, 0, 1, 1, 1],
-#                                      [0, 0, 1, 0, 0, 1],
-#                                      [0, 1, 0, 0, 1, 0],
-#                                      [tmp_df["curr"]] * 6,
-#                                      np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w"]]).T)
-#                if i % 10 == 0:
-#                    tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#            self.dfs["nonlinear"] = tmp_df.copy()
-#            # rename the columns for compatibility with the plotting function
-#            self.rename_columns("nonlinear", {"Y_2w": "V2w", "X_1w": "V1w"})
-#            self.set_unit({"I": "uA", "V": "uV"})
-#            if out_range:
-#                print("out-range happened, rerun")
-#        except KeyboardInterrupt:
-#            print("Measurement interrupted")
-#        finally:
-#            tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
-#            if source == "sr830":
-#                meter_2w.sine_voltage = 0
-#            if source == "6221":
-#                source_6221.shutdown()
+    #    @print_help_if_needed
+    #    def measure_VI_2182(self, measurename_all, *var_tuple, tmpfolder: str = None, delay: int = 5,
+    #                        mode: Literal["0-max-0", "0--max-max-0"] = "0-max-0") -> None:
+    #        """
+    #        Measure the IV curve using Keithley 2182 to test the contacts. No file will be saved if test is True
+    #
+    #        Args:
+    #            measurename_all (str): the full name of the measurement
+    #            var_tuple (tuple): the variables of the measurement, use "-h" to see the available options
+    #            tmpfolder (str): the temporary folder to store the data
+    #        """
+    #        if var_tuple[-2] == "0-max-0" or var_tuple[-2] == "0--max-max-0":
+    #            mode = var_tuple[-2]
+    #        else:
+    #            var_tuple = list(var_tuple)
+    #            var_tuple.insert(-1, mode)
+    #        file_path = self.get_filepath(measurename_all, *var_tuple, tmpfolder=tmpfolder)
+    #        file_path.parent.mkdir(parents=True, exist_ok=True)
+    #        self.add_measurement(measurename_all)
+    #        curr = convert_unit(var_tuple[0], "A")[0]
+    #        print(f"Filename is: {file_path.name}")
+    #        print(f"Max Curr: {curr} A")
+    #        print(f"steps: {var_tuple[1] - 1}")
+    #        curr_arr = np.linspace(0, curr, var_tuple[1])
+    #        if mode == "0-max-0":
+    #            curr_arr = np.concatenate((curr_arr, curr_arr[::-1]))
+    #        elif mode == "0--max-max-0":
+    #            curr_arr = np.concatenate((-curr_arr, -curr_arr[::-1], curr_arr, curr_arr[::-1]))
+    #        measure_delay = delay  # [s]
+    #        tmp_df = pd.DataFrame(columns=["I", "V", "T"])
+    #        out_range = False
+    #
+    #        instr_2182 = self.instrs["2182"]
+    #        self.setup_2182()
+    #        self.live_plot_init(1, 2, 1, 600, 1400,
+    #                            titles=[["IV", "T"]],
+    #                            axes_labels=[[["I (A)", "V (V)"], ["t", "T"]]],
+    #                            line_labels=[[["", ""], ["", ""]]])
+    #
+    #        source_6221 = self.instrs["6221"]
+    #        self.setup_6221("dc")
+    #        #source_6221.source_compliance = curr * 1E4  # compliance voltage
+    #        source_6221.source_compliance = 5  # compliance voltage
+    #        source_6221.source_range = curr / 0.6
+    #        source_6221.source_current = 0
+    #        source_6221.enable_source()
+    #        try:
+    #            for i, c in enumerate(curr_arr):
+    #                source_6221.source_current = c
+    #                time.sleep(measure_delay)
+    #                tmp_df.loc[len(tmp_df)] = [c, instr_2182.voltage, self.instrs["itc"].temperature]
+    #                self.live_plot_update(0, 0, 0, [tmp_df["I"]], [tmp_df["V"]])
+    #                self.live_plot_update(0, 1, 0, [measure_delay * np.arange(len(tmp_df["T"]))], [tmp_df["T"]])
+    #                if i % 10 == 0:
+    #                    tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #            self.dfs["IV"] = tmp_df.copy()
+    #            self.set_unit({"I": "uA", "V": "uV"})
+    #        except KeyboardInterrupt:
+    #            print("Measurement interrupted")
+    #        finally:
+    #            tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #            source_6221.disable_source()
+    #            source_6221.shutdown()
+    #            instr_2182.shutdown()
+    #
+    #    @print_help_if_needed
+    #    def measure_VI_SR830(self, measurename_all, *var_tuple: int | float | str, tmpfolder: str = None,
+    #                         source: Literal["sr830", "6221"], delay: int = 15, offset_6221=0,
+    #                         order: tuple[int, int] = (1, 2)) -> None:
+    #        """
+    #        conduct the 1-pair nonlinear measurement using 2 SR830 meters and store the data in the corresponding file. Using first meter to measure 2w signal and also as the source if appoint SR830 as source. (meters need to be loaded before calling this function). When using Keithley 6221 current source, the max voltage is the compliance voltage and the resistance does not have specific meaning, just used for calculating the current.
+    #        appoint the resistor to 1000 when using 6221(just for convenience, no special reason)
+    #
+    #        Args:
+    #            measurename_all (str): the full name of the measurement
+    #            var_tuple (any): the variables of the measurement, use "-h" to see the available options
+    #            tmpfolder (str): the temporary folder to store the data
+    #            source (Literal["sr830", "6221"]): the source of the measurement
+    #            delay (int): the delay time between each measurement
+    #            offset_6221 (int, [A]): the offset of the 6221 current source
+    #        """
+    #        file_path = self.get_filepath(measurename_all, *var_tuple, tmpfolder=tmpfolder)
+    #        file_path.parent.mkdir(parents=True, exist_ok=True)
+    #        if offset_6221 != 0:
+    #            file_path = file_path.with_name(file_path.name + f"offset{offset_6221}")
+    #        self.add_measurement(measurename_all)
+    #        print(f"Filename is: {file_path.name}")
+    #        print(f"Max Curr: {var_tuple[0] / var_tuple[1]} A")
+    #        print(f"steps: {var_tuple[2] - 1}")
+    #        print(f"2w meter: {self.instrs['sr830'][0].adapter}")
+    #        print(f"1w meter: {self.instrs['sr830'][1].adapter}")
+    #        amp = np.linspace(0, var_tuple[0], var_tuple[2])
+    #        freq = var_tuple[3]
+    #        resist = var_tuple[1]
+    #        measure_delay = delay  # [s]
+    #        tmp_df = pd.DataFrame(columns=["curr", "X_2w", "Y_2w", "R_2w", "phi_2w", "X_1w", "Y_1w", "R_1w", "phi_1w", "T"])
+    #        out_range = False
+    #
+    #        self.setup_SR830()
+    #        meter_2w = self.instrs['sr830'][0]
+    #        meter_1w = self.instrs['sr830'][1]
+    #        meter_2w.harmonic = order[1]
+    #        meter_1w.harmonic = order[0]
+    #
+    #        self.live_plot_init(2, 2, 2, 600, 1400,
+    #                            titles=[["2w", "phi"], ["1w", "phi"]],
+    #                            axes_labels=[[["I (A)", "V2w (V)"], ["I (A)", "phi"]],
+    #                                         [["I (A)", "V1w (V)"], ["I (A)", "phi"]]],
+    #                            line_labels=[[["X", "Y"], ["", ""]], [["X", "Y"], ["", ""]]])
+    #        if source == "sr830":
+    #            meter_1w.reference_source_trigger = "POS EDGE"
+    #            meter_2w.reference_source_trigger = "SINE"
+    #            meter_2w.reference_source = "Internal"
+    #            meter_2w.frequency = freq
+    #        elif source == "6221":
+    #            # 6221 use half peak-to-peak voltage as amplitude
+    #            amp *= np.sqrt(2)
+    #            source_6221 = self.instrs["6221"]
+    #            self.setup_6221(offset=offset_6221)
+    #            source_6221.source_compliance = amp[-1] + 0.1
+    #            source_6221.source_range = amp[-1] / resist / 0.7
+    #            print(f"Keithley 6221 source range is set to {amp[-1] / resist / 0.7} A")
+    #            source_6221.waveform_frequency = freq
+    #            meter_1w.reference_source_trigger = "POS EDGE"
+    #            meter_2w.reference_source_trigger = "POS EDGE"
+    #        try:
+    #            for i, v in enumerate(amp):
+    #                if source == "sr830":
+    #                    meter_2w.sine_voltage = v
+    #                elif source == "6221":
+    #                    source_6221.waveform_abort()
+    #                    source_6221.waveform_amplitude = v / resist
+    #                    source_6221.waveform_arm()
+    #                    source_6221.waveform_start()
+    #                time.sleep(measure_delay)
+    #                if meter_1w.is_out_of_range():
+    #                    out_range = True
+    #                if meter_2w.is_out_of_range():
+    #                    out_range = True
+    #                list_2w = meter_2w.snap("X", "Y", "R", "THETA")
+    #                list_1w = meter_1w.snap("X", "Y", "R", "THETA")
+    #                temp = self.instrs["itc"].temperature
+    #                if source == "sr830":
+    #                    list_tot = [v / resist] + list_2w + list_1w + [temp]
+    #                if source == "6221":
+    #                    list_tot = [v / resist / np.sqrt(2)] + list_2w + list_1w + [temp]
+    #                print(
+    #                    f"curr: {list_tot[0] * 1E6:.8f} uA\t 2w: {list_tot[1:5]}\t 1w: {list_tot[5:9]}\t T: {list_tot[-1]}")
+    #                tmp_df.loc[len(tmp_df)] = list_tot
+    #                self.live_plot_update([0, 0, 0, 1, 1, 1],
+    #                                      [0, 0, 1, 0, 0, 1],
+    #                                      [0, 1, 0, 0, 1, 0],
+    #                                      [tmp_df["curr"]] * 6,
+    #                                      np.array(tmp_df[["X_2w", "Y_2w", "phi_2w", "X_1w", "Y_1w", "phi_1w"]]).T)
+    #                if i % 10 == 0:
+    #                    tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #            self.dfs["nonlinear"] = tmp_df.copy()
+    #            # rename the columns for compatibility with the plotting function
+    #            self.rename_columns("nonlinear", {"Y_2w": "V2w", "X_1w": "V1w"})
+    #            self.set_unit({"I": "uA", "V": "uV"})
+    #            if out_range:
+    #                print("out-range happened, rerun")
+    #        except KeyboardInterrupt:
+    #            print("Measurement interrupted")
+    #        finally:
+    #            tmp_df.to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+    #            if source == "sr830":
+    #                meter_2w.sine_voltage = 0
+    #            if source == "6221":
+    #                source_6221.shutdown()
 
     @staticmethod
     def get_visa_resources() -> tuple[str, ...]:
@@ -1190,17 +1191,17 @@ class MeasureManager(DataPlot):
             yield from gen_seq(end_value, start_value, -step)
             yield from gen_seq(start_value, 0, -step)
 
-    def print_pairs(self, sub_type, v1_2w_meter: Literal[0, 1] = 0, v2_1w_meter: Literal[0, 1] = 1):
-        if "1pair" in sub_type.split("-"):
-            print("===========================================")
-            print(f"2w meter: {self.instrs['sr830'][v1_2w_meter].adapter}")
-            print(f"1w meter: {self.instrs['sr830'][v2_1w_meter].adapter}")
-            print("===========================================")
-        elif "2pair" in sub_type.split("-"):
-            print("===========================================")
-            print(f"V1 meter: {self.instrs['sr830'][v1_2w_meter].adapter}\t ORDER: {self.instrs['sr830'][0].harmonic}")
-            print(f"V2 meter: {self.instrs['sr830'][v2_1w_meter].adapter}\t ORDER: {self.instrs['sr830'][1].harmonic}")
-            print("===========================================")
+    #    def print_pairs(self, sub_type, v1_2w_meter: Literal[0, 1] = 0, v2_1w_meter: Literal[0, 1] = 1):
+    #        if "1pair" in sub_type.split("-"):
+    #            print("===========================================")
+    #            print(f"2w meter: {self.instrs['sr830'][v1_2w_meter].adapter}")
+    #            print(f"1w meter: {self.instrs['sr830'][v2_1w_meter].adapter}")
+    #            print("===========================================")
+    #        elif "2pair" in sub_type.split("-"):
+    #            print("===========================================")
+    #            print(f"V1 meter: {self.instrs['sr830'][v1_2w_meter].adapter}\t ORDER: {self.instrs['sr830'][0].harmonic}")
+    #            print(f"V2 meter: {self.instrs['sr830'][v2_1w_meter].adapter}\t ORDER: {self.instrs['sr830'][1].harmonic}")
+    #            print("===========================================")
 
     @staticmethod
     def extract_info_mods(measure_mods: tuple[str], *var_tuple: float | str) \
