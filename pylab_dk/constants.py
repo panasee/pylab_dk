@@ -88,7 +88,8 @@ def split_no_str(s: str | int | float) -> tuple[float | None, str | None]:
         return None, None
 
 
-def convert_unit(before: float | int | str, target_unit: str = "") -> tuple[float, str]:
+def convert_unit(before: float | int | str | list[float | int | str, ...] | tuple[float | int | str, ...] | np.ndarray,
+                 target_unit: str = "") -> tuple[float, str] | tuple[list[float], list[str]]:
     """
     Convert the value with the unit to the SI unit.
 
@@ -99,10 +100,15 @@ def convert_unit(before: float | int | str, target_unit: str = "") -> tuple[floa
     Returns:
         tuple[float, str]: the value in the target unit and the whole str with final unit
     """
-    value, unit = split_no_str(before)
-    value_SI = value * factor(unit, mode="to_SI")
-    new_value = value_SI * factor(target_unit, mode="from_SI")
-    return new_value, f"{new_value}{target_unit}"
+    if isinstance(before, (int, float, str)):
+        value, unit = split_no_str(before)
+        value_SI = value * factor(unit, mode="to_SI")
+        new_value = value_SI * factor(target_unit, mode="from_SI")
+        return new_value, f"{new_value}{target_unit}"
+    elif isinstance(before, (np.int64, np.float64)):
+        return convert_unit(float(before), target_unit)
+    elif isinstance(before, (list, tuple, np.ndarray)):
+        return [convert_unit(i, target_unit)[0] for i in before], [convert_unit(i, target_unit)[1] for i in before]
 
 
 def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='#',
