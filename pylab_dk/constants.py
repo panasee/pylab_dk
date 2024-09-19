@@ -111,14 +111,14 @@ def convert_unit(before: float | int | str | list[float | int | str, ...] | tupl
         return [convert_unit(i, target_unit)[0] for i in before], [convert_unit(i, target_unit)[1] for i in before]
 
 
-def print_progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=50, fill='#',
+def print_progress_bar(iteration: float, total: float, prefix='', suffix='', decimals=1, length=50, fill='#',
                        print_end="\r") -> None:
     """
     Call in a loop to create terminal progress bar
 
     Args:
-        iteration (int): current iteration
-        total (int): total iterations
+        iteration (float): current iteration
+        total (float): total iterations
         prefix (str): prefix string
         suffix (str): suffix string
         decimals (int): positive number of decimals in percent complete

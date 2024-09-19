@@ -116,7 +116,7 @@ class SourceMeter(Meter):
         self.meter.__del__()
 
     def ramp_output(self, type_str: Literal["curr", "volt", "V", "I"], value: float | str, *,
-                    compliance: float | str = None, interval: float | str = None, sleep=0.2):
+                    compliance: float | str = None, interval: float | str = None, sleep=0.2) -> None:
         """
         ramp the output to the target value
 

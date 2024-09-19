@@ -312,7 +312,7 @@ class DataPlot(DataProcess):
     @staticmethod
     def init_canvas(n_row: int, n_col: int, figsize_x: float, figsize_y: float,
                     sub_adj: tuple[float] = (0.19, 0.13, 0.97, 0.97, 0.2, 0.2), **kwargs) \
-            -> tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, DataPlot.PlotParam]:
+            -> tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, PlotParam]:
         """
         initialize the canvas for the plot, return the fig and ax variables and params(n_row, n_col, 2)
 
