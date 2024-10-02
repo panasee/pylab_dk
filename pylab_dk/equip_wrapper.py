@@ -5,6 +5,9 @@ This module contains the wrapper classes for used equipments in
 measure_manager.py. The purpose of this module is to unify the interface
 of different equipments, so that they can be combined freely
 
+! not all equipments are included in this module, only those needed wrapping
+! for some equipments already wrapped(probe_rotator), the wrapper is not necessary
+
 each wrapper provides the following methods(some only for source meters):
 - setup: initialize the equipment, usually just basic settings not including output
 - output_switch: switch the output on or off
@@ -27,7 +30,7 @@ Flow:
     shutdown()
 """
 import time
-from typing import Literal
+from typing import Literal, Optional
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -38,6 +41,7 @@ from pymeasure.instruments.keithley import Keithley2182
 from pylab_dk.drivers.Keithley_2400 import Keithley2400
 from pylab_dk.drivers.mercuryITC import MercuryITC
 from pylab_dk.drivers.Keithley_6430 import Keithley_6430
+from pylab_dk.drivers.probe_rotator import RotatorProbe
 
 from pylab_dk.constants import convert_unit, print_progress_bar, switch_dict
 from pylab_dk.data_plot import DataPlot
@@ -86,9 +90,11 @@ class SourceMeter(Meter):
         super().__init__()
         self.info_dict.update({"output_type": "curr"})
         self.output_target = 0
+        self.safe_step = 1E-6  # step threshold, used for a default ramp
 
     @abstractmethod
     def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
+        """the meter must be returned to 0"""
         self.info_dict["output_status"] = switch if isinstance(switch, bool) else switch.lower() in ["on", "ON"]
 
     @abstractmethod
@@ -103,7 +109,7 @@ class SourceMeter(Meter):
         return the output value from device and also the target value set by output methods
 
         Returns:
-            tuple[float, float]: the output value and the target value
+            tuple[float, float]: the actual output value and the target value
         """
         pass
 
@@ -116,29 +122,35 @@ class SourceMeter(Meter):
         self.meter.__del__()
 
     def ramp_output(self, type_str: Literal["curr", "volt", "V", "I"], value: float | str, *,
-                    compliance: float | str = None, interval: float | str = None, sleep=0.2) -> None:
+                    compliance: float | str = None, interval: float | str = None, sleep=0.2, from_curr=True) -> None:
         """
         ramp the output to the target value
 
         Args:
             type_str: "curr" or "volt"
             interval: the step interval between each step
-            sleep: the time interval between each step
+            sleep: the time interval(s) between each step
             value: the target value
             compliance: the compliance value
+            from_curr: whether to ramp from the current value(default) or from 0
         """
         type_str: Literal["curr", "volt"] = type_str.replace("V", "volt").replace("I", "curr")
         value = convert_unit(value, "")[0]
-        self.output_switch("off")
-        self.output_switch("on")
+        if not from_curr:
+            # reset the output to 0 (ensure it in output_switch method)
+            self.output_switch("off")
+            self.output_switch("on")
+
+        curr_val = self.get_output_status()[0]
         if interval is None:
-            arr = np.linspace(0, value, 100)
+            arr = np.linspace(curr_val, value, 100)
         elif isinstance(interval, (float, str)):
             interval = convert_unit(interval, "")[0]
-            arr = np.arange(0, value, interval)
+            interval = abs(interval) * np.sign(value - curr_val)
+            arr = np.arange(curr_val, value, interval)
             arr = np.concatenate((arr, [value]))
         else:
-            raise ValueError("interval should be a float or str or just missing")
+            raise ValueError("interval should be a float or str or just left as default")
 
         for i in arr:
             self.uni_output(i, type_str=type_str, compliance=compliance)
@@ -181,6 +193,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
         super().__init__()
         self.meter = Keithley6221(GPIB)
         self.output_target = 0
+        self.safe_step = 1E-6
         self.info_dict = {"GPIB": GPIB,
                           "output_type": "curr",
                           "ac_dc": "ac",
@@ -372,6 +385,7 @@ class WrapperSR830(ACSourceMeter):
         self.meter = SR830(GPIB)
         self.output_target = 0
         self.info_dict = {"GPIB": GPIB}
+        self.safe_step = 2E-3
         if reset:
             self.setup()
         self.info_sync()
@@ -478,6 +492,7 @@ class Wrapper6430(DCSourceMeter):
         self.meter = Keithley_6430("Keithley6430", GPIB)
         self.info_dict = {}
         self.output_target = 0
+        self.safe_step = {"volt": 1E-2, "curr": 2E-6}
         self.info_sync()
 
     def info_sync(self):
@@ -518,6 +533,8 @@ class Wrapper6430(DCSourceMeter):
 
     def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
         switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
+        if not switch:
+            self.uni_output(0, type_str=self.info_dict["output_type"])
         self.meter.output_enabled(switch)
         self.info_dict["output_status"] = switch
 
@@ -569,6 +586,7 @@ class Wrapper2400(DCSourceMeter):
         self.meter = Keithley2400("Keithley2400", GPIB)
         self.info_dict = {}
         self.output_target = 0
+        self.safe_step = {"volt": 1E-2, "curr": 2E-6}
         self.info_sync()
 
     def info_sync(self):
@@ -611,6 +629,8 @@ class Wrapper2400(DCSourceMeter):
 
     def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
         switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
+        if not switch:
+            self.uni_output(0, type_str=self.info_dict["output_type"])
         self.meter.output(switch)
         self.info_dict["output_status"] = switch
 

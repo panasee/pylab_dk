@@ -64,7 +64,7 @@ class FileOrganizer:
         FileOrganizer._out_database_dir = Path(OUT_DB_PATH) if OUT_DB_PATH is not None else None
         FileOrganizer._trash_dir = FileOrganizer._out_database_dir / "trash" if FileOrganizer._out_database_dir is not None else None
 
-    def __init__(self, proj_name: str, copy_from: str = None, special_mode=False) -> None:
+    def __init__(self, proj_name: str, copy_from: str = None) -> None:
         """
         initialize the class with the project name and judge if the name is in the accepted project names. Only
         out_database_path is required, as the local_database_dir is attached with the base_dir
@@ -127,12 +127,15 @@ class FileOrganizer:
 
         # create project folder in the out database for storing main data
         self._out_database_dir_proj.mkdir(exist_ok=True)
-        if not os.path.exists(self._out_database_dir_proj / "assist_post.ipynb"):
-            shutil.copy(FileOrganizer._local_database_dir / "assist.ipynb",
-                        self._out_database_dir_proj / "assist_post.ipynb")
-        if not os.path.exists(self._out_database_dir_proj / "assist_measure.ipynb"):
-            shutil.copy(FileOrganizer._local_database_dir / "assist.ipynb",
-                        self._out_database_dir_proj / "assist_measure.ipynb")
+        if os.path.exists(FileOrganizer._local_database_dir / "assist.ipynb"):
+            if not os.path.exists(self._out_database_dir_proj / "assist_post.ipynb"):
+                shutil.copy(FileOrganizer._local_database_dir / "assist.ipynb",
+                            self._out_database_dir_proj / "assist_post.ipynb")
+            if not os.path.exists(self._out_database_dir_proj / "assist_measure.ipynb"):
+                shutil.copy(FileOrganizer._local_database_dir / "assist.ipynb",
+                            self._out_database_dir_proj / "assist_measure.ipynb")
+        else:
+            print(f"assist.ipynb not found @ {FileOrganizer._local_database_dir}, nothing copied to proj")
         # sync the project record file at the end of the function
         FileOrganizer._sync_json("proj_rec")
 

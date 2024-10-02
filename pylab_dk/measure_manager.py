@@ -169,15 +169,15 @@ class MeasureManager(DataPlot):
                            meter: str | SourceMeter, *, max_value: float | str, step_value: float | str,
                            compliance: float | str, freq: float | str = None,
                            sweepmode: Optional[Literal["0-max-0", "0--max-max-0", "manual"]] = None,
-                           resistor: float = None, sweep_table: Optional[list[float | str, ...]] = None) -> Generator[
-        float, None, None]:
+                           resistor: float = None, sweep_table: Optional[list[float | str, ...]] = None) \
+            -> Generator[float, None, None]:
         """
         source the current using the source meter
 
         Args:
             source_type (Literal["volt","curr"]): the type of the source
             ac_dc (Literal["ac","dc"]): the mode of the current
-            meter (Literal["6430","6221"]): the meter to be used, use "-0", "-1" to specify the meter if necessary
+            meter (str | SourceMeter): the meter to be used, use "-0", "-1" to specify the meter if necessary
             max_value (float): the maximum current to be sourced
             step_value (float): the step of the current
             compliance (float): the compliance voltage of the source meter
@@ -192,6 +192,8 @@ class MeasureManager(DataPlot):
         source_type = source_type.replace("V", "volt").replace("I", "curr")
         if meter == "6221" and source_type == "volt":
             raise ValueError("6221 cannot source voltage")
+        # for string meter param, could be like "6430"(call the first meter under the type)
+        # or "6430-0"(call the first meter under the type), or "6430-1"(call the second meter under the type)
         if isinstance(meter, str):
             if len(meter.split("-")) == 1:
                 instr = self.instrs[meter][0]
@@ -219,6 +221,9 @@ class MeasureManager(DataPlot):
         print(f"Freq: {freq} Hz")
         print(f"Sweep Mode: {sweepmode}")
         instr.setup()
+        safe_step: dict | float = instr.safe_step
+        if isinstance(safe_step, dict):
+            safe_step: float = safe_step[source_type]
 
         # core functional part
         if ac_dc == "dc":
@@ -228,6 +233,7 @@ class MeasureManager(DataPlot):
                 value_gen = self.sweep_values(-max_value, max_value, step_value, mode="0-start-end-0")
             elif sweepmode == "manual":
                 value_gen = (i for i in convert_unit(sweep_table, "")[0])
+                instr.ramp_output(source_type, sweep_table[0], interval=safe_step, compliance=compliance)
             else:
                 raise ValueError("sweepmode not recognized")
             for value_i in value_gen:
@@ -237,6 +243,7 @@ class MeasureManager(DataPlot):
             if resistor is not None:
                 if sweepmode == "manual":
                     volt_gen = (i * resistor for i in convert_unit(sweep_table, "")[0])
+                    instr.ramp_output(source_type, sweep_table[0] * resistor, interval=safe_step, compliance=compliance)
                 else:
                     volt_gen = (i for i in
                                 list(np.arange(0, max_value * resistor, step_value)) + [max_value * resistor])
@@ -248,6 +255,7 @@ class MeasureManager(DataPlot):
                     instr.setup("ac")
                 if sweepmode == "manual":
                     value_gen = (i for i in convert_unit(sweep_table, "")[0])
+                    instr.ramp_output(source_type, sweep_table[0], interval=safe_step, compliance=compliance)
                 else:
                     value_gen = (i for i in list(np.arange(0, max_value, step_value)) + [max_value])
                 for value_i in value_gen:

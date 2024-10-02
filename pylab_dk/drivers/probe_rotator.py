@@ -32,7 +32,7 @@ class RotatorProbe:
     dll_path = Path(LOCAL_DB_PATH / 'WJ_API.dll')
 
     # currently only one axis is used, so all methods are for one axis (axis_num: 1)
-    def __init__(self):
+    def __init__(self, *, port: Optional[int] = None):
         assert platform.system().lower() == 'windows', 'This module only works on Windows'
         self._max_axes = 2  # actually only 1 axis is used
         self.axis_num = 1
@@ -45,10 +45,23 @@ class RotatorProbe:
         if not self.dll_path.exists():
             raise FileNotFoundError(f'WJ_API.dll not found at {self.dll_path}')
         self.wj_api = ctypes.WinDLL(str(self.dll_path))  # can pass Path-like after Python 3.12
-        self.status = self.connect()
+        if port is not None:
+            self.status = self.connect(port)
+        else:
+            self.status = self.connect()
 
         # define return type and arguments types for functions
         self.__declare_functions()
+
+    def __del__(self):
+        self.exit()
+
+    def print_info(self):
+        """print all info about the rotator"""
+        print(f"Rotator is connected to serial port: {self.serial_port}")
+        print(f"Rotator is running: {self.if_running()}")
+        print(f"Rotator current angle: {self.curr_angle()}")
+        print(f"Rotator current speed: {self.spd()}")
 
     def connect(self, serial_port: Optional[int] = None):
         """
