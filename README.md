@@ -1,6 +1,6 @@
 # pylab_dk
 
-This is a preliminary tool written for collecting 
+This is a preliminary tool based on [pymeasure](https://github.com/pymeasure/pymeasure) and [qcodes](https://github.com/microsoft/Qcodes) written for collecting 
 and dealing with experimental data. **This project has not been fully
 developed**
 
