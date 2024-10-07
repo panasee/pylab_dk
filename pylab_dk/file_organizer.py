@@ -177,20 +177,6 @@ class FileOrganizer:
             print("Wrong parameters, please ensure the parameters are correct.")
             print(name_fstr)
 
-    # TODO: delete after confirming not needed
-
-    #    @staticmethod
-    #    def measurename_decom(measure_mods: str) -> tuple[str]:
-    #        """this method will decompose the measurename string into a tuple of measurename and submeasurename(None if
-    #        not exist)"""
-    #        measure_name_list = measure_mods.split("__")
-    #        if len(measure_name_list) > 2:
-    #            raise ValueError("The measurename string is not in the correct format, please check.")
-    #        if_sub = (len(measure_name_list) == 2)
-    #        measure_name = measure_name_list[0]
-    #        measure_sub = measure_name_list[1] if if_sub else None
-    #        return (measure_name, measure_sub)
-
     @staticmethod
     def name_fstr_gen(*params: str, require_detail: bool = False) \
             -> tuple[str, str] | tuple[str, str, list[dict]] | tuple[str, str, list[dict], list[list[str]]]:
@@ -273,32 +259,7 @@ class FileOrganizer:
         # the method needs to throw an error if there are still {} in the name_str
         if re.search(r"{\w+}", name_str):
             raise ValueError("The name_str still contains {}, please check the variables.")
-        return name_str
-
-    #TODO: delete after confirming not needed
-
-    #    @staticmethod
-    #    def query_namestr(measure_mod: str) ->  None:
-    #        """
-    #        This method is for querying the naming string of a certain measure type
-    #        measure_mod: str e.g. "I_source_ac"
-    #            The name of the measure module
-    #        """
-    #        if measure_mod in FileOrganizer.measure_types_json:
-    #            if isinstance(FileOrganizer.measure_types_json[measure_mod], str):
-    #                var_names = re.findall(r'{(\w+)}', FileOrganizer.measure_types_json[measure_name])
-    #                print(FileOrganizer.measure_types_json[measure_name])
-    #                print(var_names)
-    #                return None
-    #            elif isinstance(FileOrganizer.measure_types_json[measure_name], dict):
-    #                for key, value in FileOrganizer.measure_types_json[measure_name].items():
-    #                    var_names = re.findall(r'{(\w+)}', value)
-    #                    print(f"{key}: {value}")
-    #                    print(var_names)
-    #                return None
-    #        else:
-    #            print("measure type not found, please add it first")
-    #            return None
+        return name_str + ".csv"
 
     @staticmethod
     def open_folder(path: str | Path) -> None:

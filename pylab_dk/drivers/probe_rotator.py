@@ -98,9 +98,9 @@ class RotatorProbe:
         self.wj_api.WJ_Get_Axis_Pulses(ctypes.c_int(axis_no), ctypes.byref(pulses))
         angle = float(pulses.value) / self._pulse_ratio * 360
         # embed angle overflow control here
-        if self._lower_limit <= angle <= self._upper_limit:
+        if not (self._lower_limit <= angle <= self._upper_limit):
             self.emergency_stop()
-            print("Rotator reached its limit, emergency stop triggered")
+            print(f"Rotator is at {angle}, reached its limit, emergency stop triggered")
         return angle
 
     def spd(self, *, axis_no: Optional[int] = None) -> int:
@@ -180,13 +180,13 @@ class RotatorProbe:
         self.wj_api.WJ_Get_Axis_Status.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
         self.wj_api.WJ_Get_Axis_Status.restype = ctypes.c_int
 
-        self.wj_api.WJ_Get_Axes_Status.argtypes = [ctypes.POINTER(ctypes.c_int * self.__max_axes)]
+        self.wj_api.WJ_Get_Axes_Status.argtypes = [ctypes.POINTER(ctypes.c_int * self._max_axes)]
         self.wj_api.WJ_Get_Axes_Status.restype = ctypes.c_int
 
         self.wj_api.WJ_Get_Axis_Pulses.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
         self.wj_api.WJ_Get_Axis_Pulses.restype = ctypes.c_int
 
-        self.wj_api.WJ_Get_Axes_Pulses.argtypes = [ctypes.POINTER(ctypes.c_int * self.__max_axes)]
+        self.wj_api.WJ_Get_Axes_Pulses.argtypes = [ctypes.POINTER(ctypes.c_int * self._max_axes)]
         self.wj_api.WJ_Get_Axes_Pulses.restype = ctypes.c_int
 
         self.wj_api.WJ_Get_Axes_Num.argtypes = [ctypes.POINTER(ctypes.c_int)]
@@ -196,13 +196,13 @@ class RotatorProbe:
         self.wj_api.WJ_Move_Axis_Pulses.argtypes = [ctypes.c_int, ctypes.c_int]
         self.wj_api.WJ_Move_Axis_Pulses.restype = ctypes.c_int
 
-        self.wj_api.WJ_Move_Axes_Pulses.argtypes = [ctypes.POINTER(ctypes.c_int * self.__max_axes)]
+        self.wj_api.WJ_Move_Axes_Pulses.argtypes = [ctypes.POINTER(ctypes.c_int * self._max_axes)]
         self.wj_api.WJ_Move_Axes_Pulses.restype = ctypes.c_int
 
         self.wj_api.WJ_Move_Axis_Vel.argtypes = [ctypes.c_int, ctypes.c_int]
         self.wj_api.WJ_Move_Axis_Vel.restype = ctypes.c_int
 
-        self.wj_api.WJ_Move_Axes_Vel.argtypes = [ctypes.POINTER(ctypes.c_int * self.__max_axes)]
+        self.wj_api.WJ_Move_Axes_Vel.argtypes = [ctypes.POINTER(ctypes.c_int * self._max_axes)]
         self.wj_api.WJ_Move_Axes_Vel.restype = ctypes.c_int
 
         self.wj_api.WJ_Move_Axis_Emergency_Stop.argtypes = [ctypes.c_int]

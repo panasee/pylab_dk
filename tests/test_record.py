@@ -27,7 +27,7 @@ print(f"dataframe: {df_record}")
 
 #========test record update and force_write=======
 measurement.record_update(filepath, col_no, [1]*(col_no-1), force_write=True)
-print(pd.read_csv(filepath, sep="\t"))
+print(pd.read_csv(filepath, sep="\t|,"))
 
 # Expected output:
 #                time  V_source  V_source2  X  Y  R  Theta  X2  Y2  R2  Theta2  T
@@ -37,7 +37,7 @@ print(pd.read_csv(filepath, sep="\t"))
 #========test record auto write=======
 for i in range(7):# the auto write period is 7
     measurement.record_update(filepath, col_no, [i]*(col_no-1))
-print(pd.read_csv(filepath, sep="\t"))
+print(pd.read_csv(filepath, sep="\t|,"))
 
 # Expected output:
 #                time  V_source  V_source2  X  Y  R  Theta  X2  Y2  R2  Theta2  T

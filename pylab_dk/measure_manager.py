@@ -444,7 +444,7 @@ class MeasureManager(DataPlot):
             columns_lst = rename_duplicates(columns_lst)
 
         self.dfs["curr_measure"] = pd.DataFrame(columns=columns_lst)
-        self.dfs["curr_measure"].to_csv(file_path, sep="\t", index=False, float_format="%.12f")
+        self.dfs["curr_measure"].to_csv(file_path, sep=",", index=False, float_format="%.12f")
         if return_df:
             return file_path, len(columns_lst), self.dfs["curr_measure"]
         return file_path, len(columns_lst)
@@ -474,7 +474,7 @@ class MeasureManager(DataPlot):
             self.dfs["curr_measure"].loc[len(self.dfs["curr_measure"])] = list(record_tuple)
         length = len(self.dfs["curr_measure"])
         if length >= 7 or force_write:
-            self.dfs["curr_measure"].to_csv(file_path, sep="\t", mode="a",
+            self.dfs["curr_measure"].to_csv(file_path, sep=",", mode="a",
                                             header=False, index=False, float_format="%.12f")
             self.dfs["curr_measure"] = self.dfs["curr_measure"].iloc[0:0]
 
