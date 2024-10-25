@@ -428,19 +428,6 @@ class MeasureManager(DataPlot):
                 else:
                     columns_lst.append(name)
 
-            # rename the duplicates with numbers (like ["V","V"] to ["V1","V2"])
-            def rename_duplicates(columns: list[str]) -> list[str]:
-                count_dict = {}
-                renamed_columns = []
-                for col in columns:
-                    if col in count_dict:
-                        count_dict[col] += 1
-                        renamed_columns.append(f"{col}{count_dict[col]}")
-                    else:
-                        count_dict[col] = 1
-                        renamed_columns.append(col)
-                return renamed_columns
-
             columns_lst = rename_duplicates(columns_lst)
 
         self.dfs["curr_measure"] = pd.DataFrame(columns=columns_lst)
@@ -450,44 +437,62 @@ class MeasureManager(DataPlot):
         return file_path, len(columns_lst)
 
     def record_update(self, file_path: Path, record_num: int, record_tuple: tuple[float],
-                      force_write: bool = False, with_time: bool = True) -> None:
+                      target_df: pd.DataFrame = None,
+                      force_write: bool = False, with_time: bool = True, nocache: bool = False) -> None:
         """
         update the record of the measurement and also control the size of dataframe
         when the length of current_measure dataframe is larger than 7,
-        the dataframe will be written to the file INCREMENTALLY and reset to EMPTY
 
         Args:
             file_path (Path): the file path
             record_num (int): the number of columns of the record
             record_tuple (tuple): tuple of the records, with no time column, so length is 1 shorter
+            target_df (pd.DataFrame): dataframe to be updated (default using the self.dfs['current_measure'])
             force_write (bool): whether to force write the record
             with_time (bool): whether to record the time (first column), note the time column
                 is by default included by record_init method
+            nocache (bool): whether to keep store all data in memory, if true,
+                the dataframe will be written to the file INCREMENTALLY and reset to EMPTY
+                (necessary for plotting, only turn on when dataset is extremely large
+                    and plotting is not necessary)
         """
+        # use reference to ensure synchronization of changes
+        if target_df is None:
+            curr_df = self.dfs["curr_measure"]
+        else:
+            curr_df = target_df
+
         if with_time:
             # the time is updated here, no need to be provided
             assert len(record_tuple) == record_num - 1, "The number of columns does not match"
-            self.dfs["curr_measure"].loc[len(self.dfs["curr_measure"])] = (
+            curr_df.loc[len(curr_df)] = (
                     [datetime.datetime.now().strftime("%y-%m-%d_%H:%M:%S")] + list(record_tuple))
         else:
             assert len(record_tuple) == record_num, "The number of columns does not match"
-            self.dfs["curr_measure"].loc[len(self.dfs["curr_measure"])] = list(record_tuple)
-        length = len(self.dfs["curr_measure"])
-        if length >= 7 or force_write:
-            self.dfs["curr_measure"].to_csv(file_path, sep=",", mode="a",
-                                            header=False, index=False, float_format="%.12f")
-            self.dfs["curr_measure"] = self.dfs["curr_measure"].iloc[0:0]
+            curr_df.loc[len(curr_df)] = list(record_tuple)
+        length = len(curr_df)
+        if nocache:
+            if length >= 7 or force_write:
+                curr_df.to_csv(file_path, sep=",", mode="a",
+                               header=False, index=False, float_format="%.12f")
+                curr_df.drop(curr_df.index, inplace=True)
+        else:
+            if (length % 7 == 0) or force_write:
+                curr_df.to_csv(file_path, sep=",", index=False, float_format="%.12f")
+                #curr_df = pd.DataFrame(columns=curr_df.columns)
 
     @print_help_if_needed
     def get_measure_dict(self, measure_mods: tuple[str], *var_tuple: float | str,
                          wrapper_lst: list[Meter | SourceMeter] = None, compliance_lst: list[float | str],
                          sr830_current_resistor: float = None, if_combine_gen: bool = True,
-                         sweep_tables: list[list[float | str, ...]] = None) -> dict:
+                         sweep_tables: list[list[float | str, ...]] | tuple[tuple[float | str, ...]] = None) -> dict:
         """
         do the preset of measurements and return the generators, filepath and related info
-        NOTE: meter setup should be done before calling this method, they will be bound to generators
-        NOTE: the generators are listed in parallel, if there are more than one sweep,
+        1. meter setup should be done before calling this method, they will be bound to generators
+        2. the generators are listed in parallel, if there are more than one sweep,
             do manual Cartesian product using itertools.product(gen1,gen2) -> (gen1.1,gen2.all), (gen1.2,gen2.all)...
+        3. about the varying of T/B, they will be ramped to the start value first, and then the start_vary functions
+            will be returned, call the function to start the varying; and the generator for varying is a sense_apply
 
         sweep mode: for I,V: "0-max-0", "0--max-max-0", "manual"
         sweep mode: for T,B: "0-max-0", "0--max-max-0", "min-max", "manual"

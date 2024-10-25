@@ -99,7 +99,7 @@ class SourceMeter(Meter):
     @abstractmethod
     def uni_output(self, value: float | str, *, freq: Optional[float | str] = None,
                    compliance: Optional[float | str] = None,
-                   type_str: Literal["curr", "volt"])\
+                   type_str: Literal["curr", "volt"]) \
             -> float:
         """
         judge the output type based on if freq is none
@@ -211,7 +211,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
                           "output_value": 0,
                           }
         self.info_sync()
-        print("note the grounding:") #TODO: add grounding instruction#
+        print("note the grounding:")  #TODO: add grounding instruction#
 
     def info_sync(self):
         self.info_dict.update({"source_range": self.meter.source_range,
@@ -232,8 +232,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
         """
         source_6221 = self.meter
         # first must close the output to do setup
-        if self.info_dict["output_status"]:
-            self.output_switch("off")
+        self.output_switch("off")
         source_6221.clear()
         if mode == "ac":
             self.info_dict["ac_dc"] = "ac"
@@ -285,7 +284,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
         """
         if self.info_dict["ac_dc"] == "ac":
             # amplitude for 6221 is peak to peak
-            return self.meter.waveform_amplitude/np.sqrt(2), self.output_target, self.meter.source_range
+            return self.meter.waveform_amplitude / np.sqrt(2), self.output_target, self.meter.source_range
         elif self.info_dict["ac_dc"] == "dc":
             return self.meter.source_current, self.output_target, self.meter.source_range
         else:
@@ -299,7 +298,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
         # so the range could be treated in this unified method
         value = convert_unit(value, "")[0]
         range_curr = self.meter.source_range
-        if (abs(range_curr) <= abs(value) or abs(value) <= abs(range_curr)/100) and value != 0:
+        if (abs(range_curr) <= abs(value) or abs(value) <= abs(range_curr) / 100) and value != 0:
             if freq is not None:
                 self.output_switch("off")
             self.meter.source_range = value
@@ -369,7 +368,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
         if compliance is not None:
             compliance = convert_unit(compliance, "")[0]
         else:
-            compliance = abs(value * 1000) # 6221 will automatically switch to lowest compliance if too low
+            compliance = abs(value * 1000)  # 6221 will automatically switch to lowest compliance if too low
         self.meter.source_compliance = compliance
 
         self.meter.source_current = value
@@ -395,7 +394,7 @@ class Wrapper2182(Meter):
 
     def __init__(self, GPIB: str = "GPIB0::7::INSTR"):
         super().__init__()
-        self.meter = Keithley2182(GPIB)
+        self.meter = Keithley2182(GPIB, read_termination="\n")
         self.setup()
         self.info_dict = {"GPIB": GPIB,
                           "channel": 1,
@@ -608,7 +607,8 @@ class Wrapper6430(DCSourceMeter):
             if fix_range is not None:
                 self.meter.source_current_range(convert_unit(fix_range, "A")[0])
             else:
-                if abs(value) <= self.meter.source_current_range()/100 or abs(value) >= self.meter.source_current_range():
+                if abs(value) <= self.meter.source_current_range() / 100 or abs(
+                        value) >= self.meter.source_current_range():
                     new_range = value if abs(value) > 1E-12 else 1E-12
                     self.meter.source_current_range(new_range)
             if compliance is None:
@@ -625,7 +625,8 @@ class Wrapper6430(DCSourceMeter):
             if fix_range is not None:
                 self.meter.source_voltage_range(convert_unit(fix_range, "V")[0])
             else:
-                if abs(value) <= self.meter.source_voltage_range()/100 or abs(value) >= self.meter.source_voltage_range():
+                if abs(value) <= self.meter.source_voltage_range() / 100 or abs(
+                        value) >= self.meter.source_voltage_range():
                     new_range = value if abs(value) > 0.2 else 0.2
                     self.meter.source_voltage_range(new_range)
             if compliance is None:
@@ -721,11 +722,11 @@ class Wrapper2400(DCSourceMeter):
             if fix_range is not None:
                 self.meter.rangei(convert_unit(fix_range, "A")[0])
             else:
-                if abs(value) <= self.meter.rangei()/100 or abs(value) >= self.meter.rangei():
+                if abs(value) <= self.meter.rangei() / 100 or abs(value) >= self.meter.rangei():
                     new_range = value if abs(value) > 1E-12 else 1E-12
                     self.meter.rangei(new_range)
             if compliance is None:
-                if abs(value * 1000) < 1E-3: # this limit is only for 2400 (compliancev > 1E-3)
+                if abs(value * 1000) < 1E-3:  # this limit is only for 2400 (compliancev > 1E-3)
                     compliance = 1E-3
                 else:
                     compliance = abs(value * 1000)
@@ -737,7 +738,7 @@ class Wrapper2400(DCSourceMeter):
             if fix_range is not None:
                 self.meter.rangev(convert_unit(fix_range, "V")[0])
             else:
-                if abs(value) <= self.meter.rangev()/100 or abs(value) >= self.meter.rangev():
+                if abs(value) <= self.meter.rangev() / 100 or abs(value) >= self.meter.rangev():
                     new_range = value if abs(value) > 0.2 else 0.2
                     self.meter.rangev(new_range)
             if compliance is None:
@@ -1025,26 +1026,6 @@ class ITCs(ITC):
         elif itc_name == "down":
             self.itc_down.front_panel_display = target
 
-    def chg_pointer(self, itc_name, target: tuple):
-        """
-        used to change the pointer of the ITCs
-
-        Parameters: itc_name (str): The name of the ITC503, "up" or "down" or "all" target (tuple): A tuple property
-        to set pointers into tables for loading and examining values in the table, of format (x, y). The significance
-        and valid values for the pointer depends on what property is to be read or set. The value for x and y can be
-        in the range 0 to 128.
-
-        Returns:
-        None
-        """
-        if itc_name == "all":
-            self.itc_up.pointer = target
-            self.itc_down.pointer = target
-        elif itc_name == "up":
-            self.itc_up.pointer = target
-        elif itc_name == "down":
-            self.itc_down.pointer = target
-
     @property
     def temperature_set(self):
         return self.itc_down.temperature_setpoint
@@ -1067,7 +1048,7 @@ class ITCs(ITC):
         self.control_mode = ("RU", itc_name)
         if itc_name == "up":
             itc_here = self.itc_up
-        if itc_name == "down":
+        elif itc_name == "down":
             itc_here = self.itc_down
         itc_here.temperature_setpoint = temp
         if P is not None and I is not None and D is not None:
@@ -1149,6 +1130,11 @@ class ITCs(ITC):
         """ Returns the derivative action time of the ITC503. """
         return [self.itc_up.derivative_action_time, self.itc_down.derivative_action_time]
 
+    @property
+    def pid(self):
+        """ Returns the PID of the ITC503. """
+        return tuple(zip(self.proportional_band, self.integral_action_time, self.derivative_action_time))
+
     def set_pid(self, pid: dict, mode: Literal["all", "up", "down"] = "down"):
         """ Sets the PID of the ITC503. A three-element list is required. The second elecment is "all" or "up" or "down" to specify which ITC503 to set.
         The P,I,D here are the proportional band (K), integral action time (min), and derivative action time(min), respectively.
@@ -1192,11 +1178,6 @@ class ITCs(ITC):
             self.itc_down.auto_pid = mode[0]
 
     @property
-    def sweep_status(self):
-        """ Returns the sweep status of the ITC503. """
-        return [self.itc_up.sweep_status, self.itc_down.sweep_status]
-
-    @property
     def temperature_setpoint(self):
         """ Returns the temperature setpoint of the ITC503. """
         return [self.itc_up.temperature_setpoint, self.itc_down.temperature_setpoint]
@@ -1226,3 +1207,6 @@ class ITCs(ITC):
             return self.temperatures["pot_low"]
         elif self.temperatures["pot_high"] >= 1.9:
             return self.temperatures["pot_high"]
+
+    def correction_ramping(self, temp: float, trend: Literal["up", "down", "up-huge", "down-huge"]):
+        pass

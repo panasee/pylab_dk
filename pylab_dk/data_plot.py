@@ -4,10 +4,12 @@
 
 import importlib
 import copy
+from pathlib import Path
 from typing import Optional
 
 import matplotlib
-import matplotlib.axes
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -143,9 +145,9 @@ class DataPlot(DataProcess):
         """
         _factor = factor(unit)
         if unit[0] == "u":
-            namestr = rf"$\mathrm{{\mu {unit[1:]}}}$".replace("Ohm", r"\Omega")
+            namestr = rf"$\mathrm{{\mu {unit[1:]}}}$".replace("Ohm", r"\Omega").replace("Omega", r"\Omega")
         else:
-            namestr = rf"$\mathrm{{{unit}}}$".replace("Ohm", r"\Omega")
+            namestr = rf"$\mathrm{{{unit}}}$".replace("Ohm", r"\Omega").replace("Omega", r"\Omega")
         return _factor, namestr
 
     def set_unit(self, unit_new: dict = None) -> None:
@@ -157,7 +159,7 @@ class DataPlot(DataProcess):
         """
         self.unit.update(unit_new)
 
-    def df_plot_RT(self, *, ax: matplotlib.axes.Axes = None, xylog=(False, False)) -> None:
+    def df_plot_VT(self, *, ax: Axes = None, xylog=(False, False)) -> None:
         """
         plot the RT curve
 
@@ -166,15 +168,15 @@ class DataPlot(DataProcess):
         - ax: the axes to plot the figure (require scalar)
         - custom_unit: defined if the unit is not the default one(uA, V), the format is {"I":"uA", "V":"mV", "R":"mOhm"}
         """
-        self.params.tmp.update(label="RT")
+        self.params.tmp.update(label="VT")
 
         rt_df = self.dfs["VT"]
         if ax is None:
             fig, ax, param = DataPlot.init_canvas(1, 1, 10, 6)
-        factor_r, unit_r_print = DataPlot.get_unit_factor_and_texname(self.unit["R"])
-        factor_T, unit_T_print = DataPlot.get_unit_factor_and_texname(self.unit["T"])
+        factor_r, unit_r_print = DataPlot.get_unit_factor_and_texname(self.unit["V"])
+        factor_T, unit_T_print = DataPlot.get_unit_factor_and_texname(self.unit["K"])
 
-        ax.plot(rt_df["T"] * factor_T, rt_df["R"] * factor_r, **self.params.params_list[0])
+        ax.plot(rt_df["T"] * factor_T, rt_df["V"] * factor_r, **self.params.params_list[0])
         ax.set_ylabel("$\\mathrm{R}$" + f"({unit_r_print})")
         ax.set_xlabel(f"$\\mathrm{{T}}$ ({unit_T_print})")
         ax.legend(edgecolor='black', prop=DataPlot.legend_font)
@@ -184,12 +186,12 @@ class DataPlot(DataProcess):
             ax.set_xscale("log")
 
     def df_plot_nonlinear(self, *,
-                          handlers: tuple[matplotlib.axes.Axes, ...] = None,
+                          handlers: tuple[Axes, ...] = None,
                           plot_order: tuple[bool] = (True, True),
                           reverse_V: tuple[bool] = (False, False),
                           in_ohm: bool = False,
                           xylog1=(False, False), xylog2=(False, False)) \
-            -> matplotlib.axes.Axes | tuple[matplotlib.axes.Axes, ...] | None:
+            -> Axes | tuple[Axes, ...] | None:
         """
         plot the nonlinear signals of a 1-2 omega measurement
 
@@ -279,6 +281,67 @@ class DataPlot(DataProcess):
         if return_handlers:
             return ax_1w, ax_1w_phi, ax_2w, ax_2w_phi
 
+    def plot_df_cols(self, measure_mods: tuple[str] = None, *var_tuple: float | str,
+                     data_df: pd.DataFrame = None) -> Optional[tuple[Figure, Axes]]:
+        """
+        plot all columns w.r.t. the first column in the dataframe
+        either (measurement modules and info) or data_df should be provided
+
+        Args:
+        - measure_mods: the measurement modules
+        - var_tuple: info for measurement modules
+        - data_df: the dataframe containing the data
+        """
+        if data_df is not None:
+            plot_path = None
+        else:
+            if measure_mods is None:
+                print("no info and no dataframe")
+                return None
+            else:
+                plot_path = self.get_filepath(measure_mods, *var_tuple, plot=True)
+                data_path = self.get_filepath(measure_mods, *var_tuple)
+                try:
+                    data_df = pd.read_csv(data_path, sep=r",|\s+", index_col=False)
+                except Exception:
+                    print("no data found")
+                    return None
+
+        fig, ax, param = DataPlot.init_canvas(1, 1, 14, 20)
+        for col in data_df.columns[1:]:
+            ax.plot(data_df.iloc[:, 0], data_df[col], label=col)
+        ax.set_xlabel(data_df.columns[0])  # Set the label of the x-axis to the name of the first column
+        ax.legend(edgecolor='black', prop=DataPlot.legend_font)
+        if plot_path is not None and not plot_path.exists():
+            print(f"plot saved to {plot_path}")
+            fig.savefig(plot_path)
+        plt.show()
+        return fig, ax
+
+    @staticmethod
+    def plot_mapping(data_df: pd.DataFrame, mapping_x: any, mapping_y: any, mapping_val: any, *,
+                     fig: Figure = None, ax: Axes = None) -> tuple[Figure, Axes]:
+        """
+        plot the mapping of the data
+
+        Args:
+        - data_df: the dataframe containing the data
+        - mapping_x: the column name for the x-axis
+        - mapping_y: the column name for the y-axis
+        - mapping_val: the column name for the mapping value
+        - ax: the axes to plot the figure
+        """
+        grid_df = data_df.pivot(index=mapping_x, columns=mapping_y, values=mapping_val)
+        x_arr, y_arr = np.meshgrid(grid_df.columns, grid_df.index)
+
+        if fig is None or ax is None:
+            fig, ax, param = DataPlot.init_canvas(1, 1, 10, 8)
+
+        contour = ax.contourf(x_arr, y_arr, grid_df, cmap="viridis")
+        fig.colorbar(contour)
+        return fig, ax
+
+
     @staticmethod
     def load_settings(usetex: bool = False, usepgf: bool = False) -> None:
         """load the settings for matplotlib saved in another file"""
@@ -294,7 +357,7 @@ class DataPlot(DataProcess):
         DataPlot.legend_font = getattr(config_module, 'legend_font')
 
     @staticmethod
-    def paint_colors_twin_axes(*, ax_left: matplotlib.axes.Axes, color_left: str, ax_right: matplotlib.axes.Axes,
+    def paint_colors_twin_axes(*, ax_left: Axes, color_left: str, ax_right: Axes,
                                color_right: str) -> None:
         """
         paint the colors for the twin y axes
@@ -312,7 +375,7 @@ class DataPlot(DataProcess):
     @staticmethod
     def init_canvas(n_row: int, n_col: int, figsize_x: float, figsize_y: float,
                     sub_adj: tuple[float] = (0.19, 0.13, 0.97, 0.97, 0.2, 0.2), **kwargs) \
-            -> tuple[matplotlib.figure.Figure, matplotlib.axes.Axes, PlotParam]:
+            -> tuple[Figure, Axes, PlotParam]:
         """
         initialize the canvas for the plot, return the fig and ax variables and params(n_row, n_col, 2)
 
@@ -381,7 +444,9 @@ class DataPlot(DataProcess):
         elif not is_notebook():
             fig.show()
 
-    def live_plot_update(self, row, col, lineno, x_data, y_data, *, incremental=False):
+    def live_plot_update(self, row: int | tuple[int], col: int | tuple[int], lineno: int | tuple[int],
+                         x_data: tuple[int] | list[int] | np.ndarray[int],
+                         y_data: tuple[int] | list[int] | np.ndarray[int], *, incremental=False) -> None:
         """
         update the live data in jupyter, the row, col, lineno all can be tuples to update multiple subplots at the
         same time. Note that this function is not appending datapoints, but replot the whole line, so provide the
