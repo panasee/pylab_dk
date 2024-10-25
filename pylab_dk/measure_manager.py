@@ -5,6 +5,7 @@
 initialzed right before the measurement, as there may be a long time between loading and measuremnt, leading to
 possibilities of parameter changing"""
 import copy
+from itertools import product
 from typing import Literal, Generator, Optional
 import time
 import datetime
@@ -20,7 +21,7 @@ from pylab_dk.drivers.probe_rotator import RotatorProbe
 from pylab_dk.file_organizer import print_help_if_needed, FileOrganizer
 from pylab_dk.data_plot import DataPlot
 from pylab_dk.constants import convert_unit, print_progress_bar, gen_seq, constant_generator, \
-    combined_generator_list
+    combined_generator_list, rename_duplicates
 from pylab_dk.equip_wrapper import ITCs, ITCMercury, WrapperSR830, Wrapper2400, Wrapper6430, Wrapper2182, \
     Wrapper6221, Meter, SourceMeter
 
@@ -44,6 +45,13 @@ class MeasureManager(DataPlot):
         self.instrs: dict[str, list[Meter] | ITCs | OxfordMercuryiPS | ITCMercury | RotatorProbe] = {}
         # load params for plotting in measurement
         DataPlot.load_settings(False, False)
+
+    @property
+    def proj_path(self) -> Path:
+        """
+        return the project path for manual use
+        """
+        return self._out_database_dir_proj
 
     def load_meter(self, meter_no: Literal["sr830", "6221", "2182", "2400", "6430"], *address: str) -> None:
         """
@@ -615,6 +623,50 @@ class MeasureManager(DataPlot):
             "mag_vary": None if "B" not in vary_mod else mag_vary,
             "angle_vary": None if "Theta" not in vary_mod else angle_vary
         }
+
+    def watch_sense(self, sense_mods: tuple[str], time_len: Optional[int] = None, time_step: int = 1,
+                    filename: str | Path = "tmp",
+                    wrapper_lst: list[Meter] = None) -> tuple[Generator[tuple[float], None, None], list[str]]:
+        """
+        watch the sense values with time and record them into the csv file
+        this function is basically a special case of get_measure_dict method
+        with only sense modules and no other modules
+
+        Args:
+            sense_mods (tuple[str]): targeting modules (only main str needed,
+                like T / temp, B / mag, V / volt, I / curr)
+            time_len (int (s) | None): the time length of the measurement (None = Inf)
+            time_step (int(s)): the time step of the measurement, default to 1s
+            filename (str): the filename of the csv file (parent path will be project / watch)
+            wrapper_lst (list[Meter]): the list of the wrappers to be used
+        """
+        # only need the main name of the sense module
+        sense_mods = [sense_mods[i].split("_")[0].split("-")[0] for i in range(len(sense_mods))]
+        file_path = self.proj_path / "watch" / filename
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        rec_lst = []
+        cols = ["time"]
+        for idx, sense_mod in enumerate(sense_mods):
+            rec_lst.append(self.sense_apply(sense_mod, wrapper_lst[idx]))
+            if sense_mod == "V" and isinstance(wrapper_lst[idx], WrapperSR830):
+                cols += ["X", "Y", "R", "Theta"]
+            else:
+                cols.append(sense_mod)
+
+        cols = rename_duplicates(cols)
+        total_gen = combined_generator_list(rec_lst)
+        return total_gen, cols
+
+    @staticmethod
+    def create_mapping(*lists: tuple[float | str, ...] | list[float | str, ...] | np.ndarray) \
+            -> tuple[tuple[float | str, ...]]:
+        """
+        create the mapping of the lists, return the tuple of the mapping
+        e.g.: create_mapping([1,2],[4,6]) -> ((1,4),(1,6),(2,4),(2,6))
+        """
+        mat = product(*lists)
+        mat_cols = tuple(zip(*mat))
+        return mat_cols
 
     @staticmethod
     def get_visa_resources() -> tuple[str, ...]:
