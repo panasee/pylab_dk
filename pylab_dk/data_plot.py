@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 """This module is responsible for processing and plotting the data"""
-# Todo: rewrite the plotting methods, mainly used for automatically saving the plots to the folder in coorperation with MeasureManager
 
 import importlib
 import copy
+import json
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -17,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 import pylab_dk.pltconfig.color_preset as colors
-from pylab_dk.constants import cm_to_inch, factor, default_plot_dict, is_notebook
+from pylab_dk.constants import cm_to_inch, factor, default_plot_dict, is_notebook, hex_to_rgb
 from pylab_dk.data_process import DataProcess
 
 
@@ -126,6 +128,9 @@ class DataPlot(DataProcess):
         self.go_f: Optional[go.FigureWidget] = None
         if if_folder_create:
             self.assign_folder()
+
+        self._stop_event = threading.Event()
+        self._thread = None
 
     def assign_folder(self, folder_name: str = None) -> None:
         """ Assign the folder for the measurements """
@@ -341,7 +346,6 @@ class DataPlot(DataProcess):
         fig.colorbar(contour)
         return fig, ax
 
-
     @staticmethod
     def load_settings(usetex: bool = False, usepgf: bool = False) -> None:
         """load the settings for matplotlib saved in another file"""
@@ -444,6 +448,36 @@ class DataPlot(DataProcess):
         elif not is_notebook():
             fig.show()
 
+    def save_fig_periodically(self, plot_path: Path | str, time_interval: int = 60) -> None:
+        """
+        save the figure periodically
+        this function will be running consistently in the background
+        use threading to run this function in the background
+        """
+        if isinstance(plot_path, str):
+            plot_path = Path(plot_path)
+        plot_path.parent.mkdir(parents=True, exist_ok=True)
+        while not self._stop_event.is_set():
+            time.sleep(time_interval)
+            self.go_f.write_image(plot_path)
+
+    def start_saving(self, plot_path: Path | str, time_interval: int = 60) -> None:
+        """
+        start the thread to save the figure periodically
+        """
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self.save_fig_periodically, args=(plot_path, time_interval))
+        self._thread.start()
+
+    def stop_saving(self) -> None:
+        """
+        stop the thread to save the figure periodically
+        """
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join()
+            self._thread = None
+
     def live_plot_update(self, row: int | tuple[int], col: int | tuple[int], lineno: int | tuple[int],
                          x_data: tuple[int] | list[int] | np.ndarray[int],
                          y_data: tuple[int] | list[int] | np.ndarray[int], *, incremental=False) -> None:
@@ -493,3 +527,54 @@ class DataPlot(DataProcess):
                 for no, (irow, icol, ilineno) in enumerate(zip(row, col, lineno)):
                     self.live_dfs[irow][icol][ilineno].x = np.append(self.live_dfs[irow][icol][ilineno].x, x_data[no])
                     self.live_dfs[irow][icol][ilineno].y = np.append(self.live_dfs[irow][icol][ilineno].y, y_data[no])
+
+    @staticmethod
+    def sel_pan_color(row: int = None, col: int = None) -> Optional[tuple[tuple[float | int, ...], str]]:
+        """
+        select the color according to the position in pan_colors method (use row and col as in 2D array)
+        leave row and col as None to show the color palette
+        """
+        with open(DataPlot._local_database_dir / "pan-colors.json") as f:
+            color_dict = json.load(f)
+        full_rgbs = list(map(hex_to_rgb, color_dict["values"]))
+        rgbs = full_rgbs[:2304]
+        extra = full_rgbs[2304:]
+        extra += [(1, 1, 1)] * (48 - len(extra))
+        rgb_mat = [rgbs[i * 48:(i + 1) * 48] for i in range(48)]
+        rgb_mat.append(extra)
+        if row is None and col is None:
+            DataPlot.load_settings(False, False)
+            fig, ax, _ = DataPlot.init_canvas(1, 1, 20, 20)
+            ax.imshow(rgb_mat)
+            ax.set_xticks(np.arange(0, 48, 5))
+            ax.tick_params(top=True, labeltop=True, bottom=False, labelbottom=False)
+            ax.set_yticks(np.arange(0, 48, 5))
+            plt.grid()
+            plt.show()
+        elif row is not None and col is not None:
+            return rgb_mat[row][col], color_dict["names"][row * 48 + col]
+        else:
+            print("x and y should be both None or both not None")
+
+    @staticmethod
+    def preview_colors(color_lst: tuple[float | int, ...] | list[tuple[float | int, ...]] |
+                       list[list[tuple[float | int, ...]]]) -> None:
+        """
+        preview the colors in the list
+        """
+        DataPlot.load_settings(False, False)
+        fig, ax, _ = DataPlot.init_canvas(1, 1, 13, 7)
+        try:
+            if isinstance(color_lst[0], float | int):
+                ax.imshow([[color_lst]])
+            if isinstance(color_lst[0][0], float | int):
+                ax.imshow([color_lst])
+            elif isinstance(color_lst[0][0][0], float | int):
+                ax.imshow(color_lst)
+            else:
+                print("wrong format")
+                return
+        except Exception:
+            print("wrong format")
+            return
+        plt.show()

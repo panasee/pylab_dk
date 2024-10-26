@@ -144,7 +144,7 @@ class FileOrganizer:
         FileOrganizer.open_folder(self._out_database_dir_proj)
 
     def get_filepath(self, measure_mods: tuple[str] | list[str], *var_tuple,
-                     tmpfolder: str = None, plot: bool = False) -> Path:
+                     tmpfolder: str = None, plot: bool = False, suffix: str = ".csv") -> Path:
         """
         Get the filepath of the measurement file.
 
@@ -154,9 +154,11 @@ class FileOrganizer:
             var_tuple: Tuple[int, str, float]
                 a tuple containing all parameters for the measurement
             tmpfolder: str
-                The name of the temperature/temporary folder, default is None
+                The name of the extra folder, default is None
             plot: bool
                 Whether the file is a plot file, default is False
+            suffix: str
+                The suffix of the file, default is ".csv"
         """
         measure_name, name_fstr = FileOrganizer.name_fstr_gen(*measure_mods)
 
@@ -171,7 +173,7 @@ class FileOrganizer:
                 filepath = self._out_database_dir_proj / measure_name / filename
                 if plot:
                     filepath = self._out_database_dir_proj / "plot" / measure_name / filename
-            return filepath
+            return filepath.with_suffix(suffix)
 
         except Exception:
             print("Wrong parameters, please ensure the parameters are correct.")
@@ -253,7 +255,7 @@ class FileOrganizer:
 
     @staticmethod
     def filename_format(name_str: str, *var_tuple) -> str:
-        """This method is used to format the filename"""
+        """This method is used to format the filename, csv suffix is added automatically"""
         for value in var_tuple:
             name_str = re.sub(r"{\w+}", str(value), name_str, count=1)
         # the method needs to throw an error if there are still {} in the name_str

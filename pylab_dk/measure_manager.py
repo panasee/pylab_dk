@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-##TODO: still under reconstruction, not ready for use
 """This module is responsible for managing the measure-related folders and data Note each instrument better be
 initialzed right before the measurement, as there may be a long time between loading and measuremnt, leading to
 possibilities of parameter changing"""
@@ -396,7 +395,7 @@ class MeasureManager(DataPlot):
 
     def record_init(self, measure_mods: tuple[str], *var_tuple: float | str,
                     manual_columns: list[str] = None, return_df: bool = False) \
-            -> tuple[Path, int] | tuple[Path, int, pd.DataFrame]:
+            -> tuple[Path, int, Path] | tuple[Path, int, pd.DataFrame, Path]:
         """
         initialize the record of the measurement and the csv file;
         note the file will be overwritten with an empty dataframe
@@ -412,6 +411,7 @@ class MeasureManager(DataPlot):
         """
         # main_mods, f_str = self.name_fstr_gen(*measure_mods)
         file_path = self.get_filepath(measure_mods, *var_tuple)
+        tmp_plot_path = self.get_filepath(measure_mods, *var_tuple, tmpfolder="record_plot", plot=True, suffix=".png")
         file_path.parent.mkdir(parents=True, exist_ok=True)
         self.add_measurement(*measure_mods)
         print(f"Filename is: {file_path.name}")
@@ -441,8 +441,8 @@ class MeasureManager(DataPlot):
         self.dfs["curr_measure"] = pd.DataFrame(columns=columns_lst)
         self.dfs["curr_measure"].to_csv(file_path, sep=",", index=False, float_format="%.12f")
         if return_df:
-            return file_path, len(columns_lst), self.dfs["curr_measure"]
-        return file_path, len(columns_lst)
+            return file_path, len(columns_lst), self.dfs["curr_measure"], tmp_plot_path
+        return file_path, len(columns_lst), tmp_plot_path
 
     def record_update(self, file_path: Path, record_num: int, record_tuple: tuple[float],
                       target_df: pd.DataFrame = None,
@@ -527,7 +527,7 @@ class MeasureManager(DataPlot):
         assert len(src_lst) == len(compliance_lst), "The number of sources and compliance should be the same"
 
         # init record dataframe
-        file_path, record_num = self.record_init(measure_mods, *var_tuple)
+        file_path, record_num, record_plot_path = self.record_init(measure_mods, *var_tuple)
         # init plotly canvas
         rec_lst = []  # generators list
 
@@ -618,6 +618,7 @@ class MeasureManager(DataPlot):
             "gen_lst": total_gen,
             "swp_idx": sweep_idx,
             "file_path": file_path,
+            "plot_record_path": record_plot_path,
             "record_num": record_num,
             "tmp_vary": None if "T" not in vary_mod else temp_vary,
             "mag_vary": None if "B" not in vary_mod else mag_vary,

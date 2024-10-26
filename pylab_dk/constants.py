@@ -213,6 +213,20 @@ def rename_duplicates(columns: list[str]) -> list[str]:
     return renamed_columns
 
 
+def hex_to_rgb(hex_str: str, fractional: bool = True) -> tuple[int, ...] | tuple[float, ...]:
+    """
+    convert hex color to rgb color
+
+    Args:
+        hex_str (str): hex color
+        fractional (bool): if the return value is fractional or not
+    """
+    hex_str = hex_str.lstrip('#')
+    if fractional:
+        return tuple(int(hex_str[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return tuple(int(hex_str[i:i + 2], 16) for i in (0, 2, 4))
+
+
 if "__name__" == "__main__":
     if is_notebook():
         print("This is a notebook")

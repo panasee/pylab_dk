@@ -37,7 +37,7 @@ import numpy as np
 from pymeasure.instruments.srs import SR830
 from pymeasure.instruments.oxfordinstruments import ITC503
 from pymeasure.instruments.keithley import Keithley6221
-from pylab_dk.drivers.keithley2182 import Keithley2182
+from pymeasure.instruments.keithley import Keithley2182
 from qcodes.instrument_drivers.Keithley import Keithley2400
 from pylab_dk.drivers.mercuryITC import MercuryITC
 from pylab_dk.drivers.Keithley_6430 import Keithley_6430
