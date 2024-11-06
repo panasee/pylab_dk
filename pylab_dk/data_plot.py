@@ -119,6 +119,7 @@ class DataPlot(DataProcess):
         - if_folder_create: whether to create the folder for all the measurements in project
         """
         super().__init__(proj_name)
+        self.plot_types: list[list[str]] = []
         DataPlot.load_settings(usetex, usepgf)
         self.create_folder("plot")
         self.unit = {"I": "A", "V": "V", "R": "Ohm", "T": "K", "B": "T", "f": "Hz"}
@@ -325,7 +326,7 @@ class DataPlot(DataProcess):
 
     @staticmethod
     def plot_mapping(data_df: pd.DataFrame, mapping_x: any, mapping_y: any, mapping_val: any, *,
-                     fig: Figure = None, ax: Axes = None) -> tuple[Figure, Axes]:
+                     fig: Figure = None, ax: Axes = None, cmap: str = "viridis") -> tuple[Figure, Axes]:
         """
         plot the mapping of the data
 
@@ -342,7 +343,7 @@ class DataPlot(DataProcess):
         if fig is None or ax is None:
             fig, ax, param = DataPlot.init_canvas(1, 1, 10, 8)
 
-        contour = ax.contourf(x_arr, y_arr, grid_df, cmap="viridis")
+        contour = ax.contourf(x_arr, y_arr, grid_df, cmap=cmap)
         fig.colorbar(contour)
         return fig, ax
 
@@ -397,9 +398,10 @@ class DataPlot(DataProcess):
         return fig, ax, DataPlot.PlotParam(n_row, n_col, 2)
 
     def live_plot_init(self, n_rows: int, n_cols: int, lines_per_fig: int = 2, pixel_height: float = 600,
-                       pixel_width: float = 1200, *, titles: tuple[tuple[str]] | list[list[str]] = None,
-                       axes_labels: tuple[tuple[tuple[str]]] | list[list[list[str]]] = None,
-                       line_labels: tuple[tuple[tuple[str]]] | list[list[list[str]]] = None) -> None:
+                       pixel_width: float = 1200, *, titles: Sequence[Sequence[str]] = None,
+                       axes_labels: Sequence[Sequence[Sequence[str]]] = None,
+                       line_labels: Sequence[Sequence[Sequence[str]]] = None,
+                       plot_types: Sequence[Sequence[Literal["scatter", "contour"]]] = None) -> None:
         """
         initialize the real-time plotter using plotly
 
@@ -412,7 +414,15 @@ class DataPlot(DataProcess):
         - titles: the titles of the subplots, shape should be (n_rows, n_cols), note the type notation
         - axes_labels: the labels of the axes, note the type notation, shape should be (n_rows, n_cols, 2[x and y axes labels])
         - line_labels: the labels of the lines, note the type notation, shape should be (n_rows, n_cols, lines_per_fig)
+        - plot_types: the plot types for the lines, the type of plot for each subplot,
+                options include 'scatter' and 'contour', shape should be (n_rows, n_cols)
         """
+        if plot_types is None:
+            plot_types = [['scatter' for _ in range(n_cols)] for _ in range(n_rows)]
+        self.plot_types = plot_types
+        # for contour plot, only one "line" is allowed
+        traces_per_subplot = [[lines_per_fig if plot_types[i][j] == 'scatter' else 1 for j in range(n_cols)] for i
+                              in range(n_rows)]
         if titles is None:
             titles = [["" for _ in range(n_cols)] for _ in range(n_rows)]
         flat_titles = [item for sublist in titles for item in sublist]
@@ -426,24 +436,39 @@ class DataPlot(DataProcess):
         #y_arr = [[[[] for _ in range(lines_per_fig)] for _ in range(n_cols)] for _ in range(n_rows)]
 
         fig = make_subplots(rows=n_rows, cols=n_cols, subplot_titles=flat_titles)
+        data_idx = 0
+        self.live_dfs = [[[] for _ in range(n_cols)] for _ in range(n_rows)]
         for i in range(n_rows):
             for j in range(n_cols):
-                for k in range(lines_per_fig):
-                    fig.add_trace(go.Scatter(x=[], y=[], mode='lines+markers', name=line_labels[i][j][k]), row=i + 1,
-                                  col=j + 1)
-                    # fig.add_trace(go.Scatter(x=x_arr[i][j], y=y_arr[i][j][1], mode='lines+markers', name=''),
-                    # row=i+1, col=j+1)
+                plot_type = plot_types[i][j]
+                num_traces = traces_per_subplot[i][j]
+                if plot_type == 'scatter':
+                    for k in range(num_traces):
+                        fig.add_trace(go.Scatter(x=[], y=[], mode='lines+markers', name=line_labels[i][j][k]),
+                                      row=i + 1, col=j + 1)
+                        data_idx += 1
+                elif plot_type == 'contour':
+                    fig.add_trace(go.Contour(z=[], x=[], y=[], name=line_labels[i][j][0]), row=i + 1, col=j + 1)
+                    data_idx += 1
+                else:
+                    raise ValueError(f"Unsupported plot type '{plot_type}' at subplot ({i},{j})")
                 fig.update_xaxes(title_text=axes_labels[i][j][0], row=i + 1, col=j + 1)
                 fig.update_yaxes(title_text=axes_labels[i][j][1], row=i + 1, col=j + 1)
-                #fig.update_yaxes(title_text=axes_labels[i][j][2], row=i+1, col=j+1
 
         fig.update_layout(height=pixel_height, width=pixel_width)
         if is_notebook():
             from IPython.display import display
             self.go_f = go.FigureWidget(fig)
-            self.live_dfs = [
-                [[self.go_f.data[i * n_cols * lines_per_fig + j * lines_per_fig + k] for k in range(lines_per_fig)] for
-                 j in range(n_cols)] for i in range(n_rows)]
+#            self.live_dfs = [
+#                [[self.go_f.data[i * n_cols * lines_per_fig + j * lines_per_fig + k] for k in range(lines_per_fig)] for
+#                 j in range(n_cols)] for i in range(n_rows)]
+            idx = 0
+            for i in range(n_rows):
+                for j in range(n_cols):
+                    num_traces = traces_per_subplot[i][j]
+                    for k in range(num_traces):
+                        self.live_dfs[i][j].append(self.go_f.data[idx])
+                        idx += 1
             display(self.go_f)
         elif not is_notebook():
             fig.show()
@@ -479,15 +504,18 @@ class DataPlot(DataProcess):
             self._thread = None
 
     def live_plot_update(self, row: int | tuple[int], col: int | tuple[int], lineno: int | tuple[int],
-                         x_data: tuple[int] | list[int] | np.ndarray[int],
-                         y_data: tuple[int] | list[int] | np.ndarray[int], *, incremental=False) -> None:
+                         x_data: Sequence[float] | Sequence[Sequence[float]] | np.ndarray[float],
+                         y_data: Sequence[float] | Sequence[Sequence[float]] | np.ndarray[float],
+                         z_data: Sequence[float] | Sequence[Sequence[float]] | np.ndarray[float] = (0,),
+                         *, incremental=False, max_points: int = None) -> None:
         """
         update the live data in jupyter, the row, col, lineno all can be tuples to update multiple subplots at the
         same time. Note that this function is not appending datapoints, but replot the whole line, so provide the
         whole data array for each update. The row, col, lineno, x_data, y_data should be of same length (no. of lines
-        plotted).
-        Example: live_plot_update((0,1), (0,1), (0,1), [[x1, x2], [x3, x4]], [[y1, y2], [y3, y4]]) will
-        plot the (0,0,0) line with [x1, x2] and [y1, y2], and (1,1,1) line with [x3, x4] and [y3, y4]
+        plotted). Be careful about the correspondence of data and index, e.g. when given indices like (0,1), the data
+        should be like [[0],[1]], instead of [0,1] (incremental case).
+        Example: live_plot_update((0,1), (0,1), (0,1), [x_arr1, x_arr2], [y_arr1, y_arr2]) will
+        plot the (0,0,0) line with x_arr1 and y_arr1, and (1,1,1) line with x_arr2 and y_arr2
 
         Args:
         - row: the row of the subplot (from 0)
@@ -495,8 +523,12 @@ class DataPlot(DataProcess):
         - lineno: the line no. of the subplot (from 0)
         - x_data: the array-like x data (not support single number, use [x] or (x,) instead)
         - y_data: the array-like y data (not support single number, use [y] or (y,) instead)
+        - z_data: the array-like z data (for contour plot only, be the same length as no of contour plots)
         - incremental: whether to update the data incrementally
+        - max_points: the maximum number of points to be plotted, if None, no limit, only affect incremental line plots
         """
+        if not incremental and max_points is not None:
+            print("max_points will be ignored when incremental is False")
 
         def ensure_list(data) -> np.ndarray:
             if isinstance(data, (list, tuple, np.ndarray, pd.Series, pd.DataFrame)):
@@ -507,26 +539,44 @@ class DataPlot(DataProcess):
         def ensure_2d_array(data) -> np.ndarray:
             data_arr = ensure_list(data)
             if not isinstance(data_arr[0], np.ndarray):
-                return np.array([data_arr])
+                return np.array([data_arr], dtype=np.float32)
             else:
-                return np.array(data_arr)
+                return np.array(data_arr, dtype=np.float32)
 
         row = ensure_list(row)
         col = ensure_list(col)
         lineno = ensure_list(lineno)
         x_data = ensure_2d_array(x_data)
         y_data = ensure_2d_array(y_data)
+        z_data = ensure_2d_array(z_data)
 
         #dim_tolift = [0, 0, 0]
-        with self.go_f.batch_update():
-            if not incremental:
-                for no, (irow, icol, ilineno) in enumerate(zip(row, col, lineno)):
-                    self.live_dfs[irow][icol][ilineno].x = x_data[no]
-                    self.live_dfs[irow][icol][ilineno].y = y_data[no]
-            else:
-                for no, (irow, icol, ilineno) in enumerate(zip(row, col, lineno)):
-                    self.live_dfs[irow][icol][ilineno].x = np.append(self.live_dfs[irow][icol][ilineno].x, x_data[no])
-                    self.live_dfs[irow][icol][ilineno].y = np.append(self.live_dfs[irow][icol][ilineno].y, y_data[no])
+        with (self.go_f.batch_update()):
+            idx_z = 0
+            for no, (irow, icol, ilineno) in enumerate(zip(row, col, lineno)):
+                plot_type = self.plot_types[irow][icol]
+                trace = self.live_dfs[irow][icol][ilineno]
+                if plot_type == 'scatter':
+                    if incremental:
+                        trace.x = np.append(trace.x, x_data[no])[-max_points:] if max_points is not None\
+                            else np.append(trace.x, x_data[no])
+                        trace.y = np.append(trace.y, y_data[no])[-max_points:] if max_points is not None\
+                            else np.append(trace.y, y_data[no])
+                    else:
+                        trace.x = x_data[no]
+                        trace.y = y_data[no]
+                if plot_type == 'contour':
+                    if not incremental:
+                        trace.x = x_data[no]
+                        trace.y = y_data[no]
+                        trace.z = z_data[idx_z]
+                    else:
+                        trace.x = np.append(trace.x, x_data[no])
+                        trace.y = np.append(trace.y, y_data[no])
+                        trace.z = np.append(trace.z, z_data[idx_z])
+                    idx_z += 1
+            assert idx_z == len(z_data) or (idx_z == 0 and z_data == (0,)), \
+                "z_data should have the same length as the number of contour plots"
 
     @staticmethod
     def sel_pan_color(row: int = None, col: int = None) -> Optional[tuple[tuple[float | int, ...], str]]:
