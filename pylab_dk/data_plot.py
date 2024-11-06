@@ -6,10 +6,10 @@ import copy
 import json
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 
-import matplotlib
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt

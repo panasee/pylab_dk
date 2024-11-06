@@ -154,7 +154,7 @@ class FileOrganizer:
             var_tuple: Tuple[int, str, float]
                 a tuple containing all parameters for the measurement
             tmpfolder: str
-                The name of the extra folder, default is None
+                The name of the extra folder, default is None, could be multilayer like "folder1/folder2"
             plot: bool
                 Whether the file is a plot file, default is False
             suffix: str

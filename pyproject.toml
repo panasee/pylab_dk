@@ -21,9 +21,7 @@ dependencies = [
     "matplotlib",
     "plotly",
     "kaleido==0.1.0.post1",
-    "pandas",
     "pyvisa",
-    "threading",
     "pymeasure>=0.14.0",
     "qcodes>=0.47.0"
 ]

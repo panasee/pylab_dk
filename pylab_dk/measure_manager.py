@@ -52,7 +52,7 @@ class MeasureManager(DataPlot):
         """
         return self._out_database_dir_proj
 
-    def load_meter(self, meter_no: Literal["sr830", "6221", "2182", "2400", "6430"], *address: str) -> None:
+    def load_meter(self, meter_no: Literal["sr830", "6221", "2182", "2182a", "2400", "2401", "6430"], *address: str) -> None:
         """
         load the instrument according to the address, store it in self.instrs[meter]
 
@@ -61,6 +61,8 @@ class MeasureManager(DataPlot):
             address (str): the address of the instrument
         """
         # some meters can not be loaded twice, so del old one first
+        meter_no = meter_no.lower()
+        meter_no.replace("2401", "2400").replace("2182a", "2182")
         if meter_no in self.instrs:
             del self.instrs["meter_no"]
             gc.collect()
@@ -179,7 +181,7 @@ class MeasureManager(DataPlot):
                            resistor: float = None, sweep_table: Optional[list[float | str, ...]] = None) \
             -> Generator[float, None, None]:
         """
-        source the current using the source meter
+        source the current using the source meter, initializations will be done automatically
 
         Args:
             source_type (Literal["volt","curr"]): the type of the source
@@ -201,17 +203,7 @@ class MeasureManager(DataPlot):
             raise ValueError("6221 cannot source voltage")
         # for string meter param, could be like "6430"(call the first meter under the type)
         # or "6430-0"(call the first meter under the type), or "6430-1"(call the second meter under the type)
-        if isinstance(meter, str):
-            if len(meter.split("-")) == 1:
-                instr = self.instrs[meter][0]
-            elif len(meter_tuple := meter.split("-")) == 2:
-                instr = self.instrs[meter_tuple[0]][int(meter_tuple[1])]
-            else:
-                raise ValueError("meter name is not in the correct format")
-        elif isinstance(meter, SourceMeter):
-            instr = meter
-        else:
-            raise ValueError("meter name not recognized")
+        instr = self.extract_meter_info(meter)
 
         # convert values to SI and print info
         max_value = convert_unit(max_value, "")[0]
@@ -247,10 +239,10 @@ class MeasureManager(DataPlot):
                 instr.uni_output(value_i, compliance=compliance, type_str=source_type)
                 yield value_i
         elif ac_dc == "ac":
-            if resistor is not None:
+            if resistor is not None:  # automatically regard the source value as current and set output mode to volt
                 if sweepmode == "manual":
                     volt_gen = (i * resistor for i in convert_unit(sweep_table, "")[0])
-                    instr.ramp_output(source_type, sweep_table[0] * resistor, interval=safe_step, compliance=compliance)
+                    instr.ramp_output("volt", sweep_table[0] * resistor, interval=safe_step, compliance=compliance)
                 else:
                     volt_gen = (i for i in
                                 list(np.arange(0, max_value * resistor, step_value)) + [max_value * resistor])
@@ -326,7 +318,7 @@ class MeasureManager(DataPlot):
                     meter: str | Meter = None, *, if_during_vary=False) \
             -> Generator[float | tuple[float], None, None]:
         """
-        sense the current using the source meter
+        sense the current using the source meter, initializations will be done for volt/curr meters
 
         Args:
             sense_type (Literal["volt","curr", "temp","mag"]): the type of the sense
@@ -341,17 +333,7 @@ class MeasureManager(DataPlot):
                       replace("Theta", "angle"))
         print(f"Sense Type: {sense_type}")
         if sense_type in ["volt", "curr"] and meter is not None:
-            if isinstance(meter, str):
-                if len(meter.split("-")) == 1:
-                    instr = self.instrs[meter][0]
-                elif len(meter_tuple := meter.split("-")) == 2:
-                    instr = self.instrs[meter_tuple[0]][int(meter_tuple[1])]
-                else:
-                    raise ValueError("meter name is not in the correct format")
-            elif isinstance(meter, Meter):
-                instr = meter
-            else:
-                raise ValueError("meter name not recognized")
+            instr = self.extract_meter_info(meter)
             print(f"Sense Meter/Instr: {instr.meter}")
             instr.setup()
             while True:
@@ -382,7 +364,7 @@ class MeasureManager(DataPlot):
                     # only z field is considered
                     if abs(np.linalg.norm(
                             (instr.x_measured(), instr.y_measured(), instr.z_measured())) - np.linalg.norm(
-                        instr.z_target())) < 0.01:
+                            instr.z_target())) < 0.01:
                         timer_i += 1
                     else:
                         timer_i = 0
@@ -394,7 +376,7 @@ class MeasureManager(DataPlot):
                 yield instr.curr_angle()
 
     def record_init(self, measure_mods: tuple[str], *var_tuple: float | str,
-                    manual_columns: list[str] = None, return_df: bool = False) \
+                    manual_columns: list[str] = None, return_df: bool = False, special_folder: str = None) \
             -> tuple[Path, int, Path] | tuple[Path, int, pd.DataFrame, Path]:
         """
         initialize the record of the measurement and the csv file;
@@ -405,13 +387,19 @@ class MeasureManager(DataPlot):
             var_tuple (tuple): the variables of the measurement, use "-h" to see the available options
             manual_columns (list[str]): manually appoint the columns (default to None, automatically generate columns)
             return_df (bool): if the final record dataframe will be returned (default not, and saved as a member)
+            special_folder (str): the special folder to store the record file (last subfolder, parents[0])
         Returns:
             Path: the file path
             int: the number of columns of the record
         """
         # main_mods, f_str = self.name_fstr_gen(*measure_mods)
-        file_path = self.get_filepath(measure_mods, *var_tuple)
-        tmp_plot_path = self.get_filepath(measure_mods, *var_tuple, tmpfolder="record_plot", plot=True, suffix=".png")
+        file_path = self.get_filepath(measure_mods, *var_tuple, tmpfolder=special_folder)
+        if special_folder is not None and special_folder != "":
+            tmp_plot_path = self.get_filepath(measure_mods, *var_tuple,
+                                              tmpfolder=f"{special_folder}/record_plot", plot=True, suffix=".png")
+        else:
+            tmp_plot_path = self.get_filepath(measure_mods, *var_tuple,
+                                              tmpfolder="record_plot", plot=True, suffix=".png")
         file_path.parent.mkdir(parents=True, exist_ok=True)
         self.add_measurement(*measure_mods)
         print(f"Filename is: {file_path.name}")
@@ -493,7 +481,8 @@ class MeasureManager(DataPlot):
     def get_measure_dict(self, measure_mods: tuple[str], *var_tuple: float | str,
                          wrapper_lst: list[Meter | SourceMeter] = None, compliance_lst: list[float | str],
                          sr830_current_resistor: float = None, if_combine_gen: bool = True,
-                         sweep_tables: list[list[float | str, ...]] | tuple[tuple[float | str, ...]] = None) -> dict:
+                         sweep_tables: list[list[float | str, ...]] | tuple[tuple[float | str, ...]] = None,
+                         special_name: str = None) -> dict:
         """
         do the preset of measurements and return the generators, filepath and related info
         1. meter setup should be done before calling this method, they will be bound to generators
@@ -515,6 +504,7 @@ class MeasureManager(DataPlot):
                                 if False, return the list of generators for further operations
             sweep_tables (list[list[float | str, ...]]): the list of the sweep tables for manual sweep,
                                 the table will be fetched and used according to the order from left to right(0->1->2...)
+            special_name (str): the special name used for subfolder to avoid mixing under the same measurement name
 
         Returns:
             dict: a dictionary containing the list of generators, dataframe csv filepath and record number
@@ -527,7 +517,8 @@ class MeasureManager(DataPlot):
         assert len(src_lst) == len(compliance_lst), "The number of sources and compliance should be the same"
 
         # init record dataframe
-        file_path, record_num, record_plot_path = self.record_init(measure_mods, *var_tuple)
+        file_path, record_num, record_plot_path = self.record_init(measure_mods, *var_tuple,
+                                                                   special_folder=special_name)
         # init plotly canvas
         rec_lst = []  # generators list
 
@@ -657,6 +648,24 @@ class MeasureManager(DataPlot):
         cols = rename_duplicates(cols)
         total_gen = combined_generator_list(rec_lst)
         return total_gen, cols
+
+    def extract_meter_info(self, meter: str | Meter) -> Meter | SourceMeter:
+        """
+        convert the meter name to the meter object and print the name of object
+        (directly return it if it is already a meter object)
+        """
+        if isinstance(meter, str):
+            if len(meter.split("-")) == 1:
+                instr = self.instrs[meter][0]
+            elif len(meter_tuple := meter.split("-")) == 2:
+                instr = self.instrs[meter_tuple[0]][int(meter_tuple[1])]
+            else:
+                raise ValueError("meter name is not in the correct format")
+        elif isinstance(meter, Meter):
+            instr = meter
+        else:
+            raise ValueError("meter name not recognized")
+        return instr
 
     @staticmethod
     def create_mapping(*lists: tuple[float | str, ...] | list[float | str, ...] | np.ndarray) \
