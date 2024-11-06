@@ -36,9 +36,9 @@ from abc import ABC, abstractmethod
 import numpy as np
 from pymeasure.instruments.srs import SR830
 from pymeasure.instruments.oxfordinstruments import ITC503
-from pymeasure.instruments.keithley import Keithley6221
+from pymeasure.instruments.keithley import Keithley6221, KeithleyDMM6500
 from pymeasure.instruments.keithley import Keithley2182
-from qcodes.instrument_drivers.Keithley import Keithley2400
+from qcodes.instrument_drivers.Keithley import Keithley2400, Keithley2450
 from pylab_dk.drivers.mercuryITC import MercuryITC
 from pylab_dk.drivers.Keithley_6430 import Keithley_6430
 
@@ -225,7 +225,7 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
                                })
 
     def setup(self, mode: Literal["ac", "dc"] = "ac", *, offset=0, source_auto_range=True,
-              low_grounded=False, wave_function="sine") -> None:
+              low_grounded=True, wave_function="sine") -> None:
         """
         set up the Keithley 6221 instruments, overwrite the specific settings here, other settings will all be
         reserved. Note that the waveform will not begin here
@@ -418,6 +418,69 @@ class Wrapper2182(Meter):
 
     def sense(self, type_str: Literal["volt"] = "volt") -> float:
         return self.meter.voltage
+
+
+class Wrapper6500(Meter):
+    """
+    Flow:
+    Wrapper6500(GPIB)
+    setup(channel)
+    sense()
+    """
+
+    def __init__(self, GPIB: str = "GPIB0::16::INSTR"):
+        super().__init__()
+        self.meter = KeithleyDMM6500(GPIB)
+        self.setup()
+        self.info_dict = {"GPIB": GPIB,
+                          "channel": 1,
+                          "sense_type": "volt",
+                          "auto_range": True,
+                          "auto_zero": True,
+                          "terminal": "front"}
+
+    def setup(self) -> None:
+        """default to measuring voltage"""
+        self.meter.write("*RST")
+        self.meter.auto_range()
+        self.meter.write(":SENS:VOLT:INP AUTO")  # auto impedance
+        self.meter.autozero_enabled = True
+        self.meter.enable_filter("volt", "repeat", 10)
+
+    def info_sync(self):
+        """
+        no parameters to sync for 2182
+        """
+        self.info_dict.update({"auto_range": self.meter.auto_range_status(),
+                               "sense_type": self.meter.mode,
+                               "auto_zero": self.meter.autozero_enabled,
+                               "terminal": self.meter.terminals_used})
+
+    def sense(self, type_str: Literal["volt", "curr", "freq"] = "volt", max_val: float | str = None,
+              ac_dc: Literal["ac", "dc"] = "dc") -> float:
+        """
+        sense the voltage or current or frequency
+
+        Args:
+            type_str: "volt" or "curr" or "freq"
+            max_val: the manual range for the measurement (anticipated maximum)
+            ac_dc: "ac" or "dc"
+        """
+        if max_val is not None:
+            max_val = convert_unit(max_val, "")[0]
+        match type_str:
+            case "volt":
+                self.meter.measure_voltage(max_voltage=(max_val if max_val is not None else 1), ac=(ac_dc == "ac"))
+                self.meter.auto_range()
+                return self.meter.voltage
+            case "curr":
+                self.meter.measure_current(max_current=(max_val if max_val is not None else 1E-2), ac=(ac_dc == "ac"))
+                self.meter.auto_range()
+                return self.meter.current
+            case "freq":
+                self.meter.measure_frequency()
+                self.meter.auto_range()
+                return self.meter.frequency
 
 
 class WrapperSR830(ACSourceMeter):
@@ -686,7 +749,7 @@ class Wrapper2400(DCSourceMeter):
         return the output value from device and also the target value set by output methods
 
         Returns:
-            tuple[float, float]: the output value and the target value
+            tuple[float, float, float]: the output value, target value and range
         """
         if self.meter.mode().lower() == "curr":
             if self.info_dict["output_status"] == False:
@@ -755,6 +818,120 @@ class Wrapper2400(DCSourceMeter):
     def shutdown(self):
         self.meter.curr(0)
         self.meter.volt(0)
+        self.output_switch("off")
+
+
+class Wrapper2450(DCSourceMeter):
+    ##TODO: not tested yet
+    def __init__(self, GPIB: str = "GPIB0::18::INSTR"):
+        super().__init__()
+        self.meter = Keithley2450("Keithley2450", GPIB)
+        self.info_dict = {}
+        self.output_target = 0
+        self.safe_step = {"volt": 1E-2, "curr": 2E-6}
+        self.info_sync()
+
+    def info_sync(self):
+        self.info_dict.update({
+            "output_status": self.meter.output_enabled(),
+            "output_type": self.meter.source.function(),
+            "compliance": self.meter.source.limit(),
+            "source_range": self.meter.source.range(),
+            "sense_range": self.meter.sense.range(),
+            "sense_type": self.meter.sense.function(),
+            "sense_autozero": self.meter.sense.auto_zero_enabled(),
+        })
+
+    def setup(self):
+        self.meter.reset()
+        self.info_sync()
+        self.meter.terminals("front")
+        self.meter.sense.auto_range(True)
+
+    def sense(self, type_str: Literal["curr", "volt", "resist"]) -> float:
+        if type_str == "curr":
+            if self.info_dict["output_type"] == "curr":
+                print("in curr mode, print the set point")
+                return self.meter.source.current()
+            return self.meter.sense.current()
+        elif type_str == "volt":
+            if self.info_dict["output_type"] == "volt":
+                print("in curr mode, print the set point")
+                return self.meter.source.voltage()
+            return self.meter.sense.voltage()
+        elif type_str == "resist":
+            return self.meter.sense.resistance()
+
+    def get_output_status(self) -> tuple[float, float, float]:
+        """
+        return the output value from device and also the target value set by output methods
+
+        Returns:
+            tuple[float, float, float]: the output value, target value and range
+        """
+        if not self.info_dict["output_status"]:
+            return 0, self.output_target, self.meter.source.range()
+        if self.meter.source.function() == "current":
+            return self.meter.source.current(), self.output_target, self.meter.source.range()
+        elif self.meter.source.function() == "voltage":
+            return self.meter.source.voltage(), self.output_target, self.meter.source.range()
+
+    def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
+        switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
+        if not switch:
+            self.uni_output(0, type_str=self.info_dict["output_type"])
+        self.meter.output_enabled(switch)
+        self.info_dict["output_status"] = switch
+
+    def uni_output(self, value: float | str, *, freq=None, fix_range: Optional[float | str] = None,
+                   compliance: float | str = None, type_str: Literal["curr", "volt"]) -> float:
+        self.dc_output(value, compliance=compliance, type_str=type_str, fix_range=fix_range)
+        self.output_target = convert_unit(value, "")[0]
+        return self.get_output_status()[0]
+
+    def dc_output(self, value: float | str, *, fix_range: Optional[float | str] = None,
+                  compliance: float | str, type_str: Literal["curr", "volt"]):
+        value = convert_unit(value, "")[0]
+        # close and reopen the source meter to avoid error when switching source type
+        if self.meter.source.function() != type_str:
+            self.output_switch("off")
+
+        if type_str == "curr":
+            self.meter.source.function("current")
+            if fix_range is not None:
+                self.meter.source.range(convert_unit(fix_range, "A")[0])
+            else:
+                self.meter.source.auto_range(True)
+            if compliance is None:
+                if abs(value * 1000) < 1E-3:  # this limit is only for 2400 (compliancev > 1E-3)
+                    compliance = 1E-3
+                else:
+                    compliance = abs(value * 1000)
+            self.meter.source.limit(convert_unit(compliance, "A")[0])
+            self.meter.source.current(value)
+
+        elif type_str == "volt":
+            self.meter.mode("VOLT")
+            if fix_range is not None:
+                self.meter.rangev(convert_unit(fix_range, "V")[0])
+            else:
+                self.meter.source.auto_range(True)
+            if compliance is None:
+                if abs(value / 1000) < 1E-6:
+                    compliance = 1E-6
+                else:
+                    compliance = abs(value / 1000)
+            self.meter.source.limit(convert_unit(compliance, "V")[0])
+            self.meter.source.voltage(value)
+
+        self.info_dict["output_type"] = type_str
+        self.output_switch("on")
+
+    def shutdown(self):
+        if self.info_dict["output_type"] == "curr":
+            self.meter.source.current(0)
+        elif self.info_dict["output_type"] == "volt":
+            self.meter.source.voltage(0)
         self.output_switch("off")
 
 
