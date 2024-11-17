@@ -97,9 +97,9 @@ class RotatorProbe:
         """
         if axis_no is None:
             axis_no = self.axis_num
-        pulses = ctypes.c_int32()
-        self.wj_api.WJ_Get_Axis_Pulses(ctypes.c_int32(axis_no), ctypes.byref(pulses))
-        angle = float(pulses.value) / self._pulse_ratio * 360
+        pulse_array = (ctypes.c_int32 * self._max_axes)()
+        self.wj_api.WJ_Get_Axes_Pulses(pulse_array)
+        angle = list(pulse_array)[0] / self._pulse_ratio * 360
         # embed angle overflow control here
         if not (self._lower_limit <= angle <= self._upper_limit):
             self.emergency_stop()
