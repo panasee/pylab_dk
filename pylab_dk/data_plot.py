@@ -287,7 +287,7 @@ class DataPlot(DataProcess):
         if return_handlers:
             return ax_1w, ax_1w_phi, ax_2w, ax_2w_phi
 
-    def plot_df_cols(self, measure_mods: tuple[str] = None, *var_tuple: float | str,
+    def plot_df_cols(self, measure_mods: tuple[str], *var_tuple: float | str,
                      data_df: pd.DataFrame = None) -> Optional[tuple[Figure, Axes]]:
         """
         plot all columns w.r.t. the first column in the dataframe

@@ -20,7 +20,7 @@ from pylab_dk.drivers.probe_rotator import RotatorProbe
 from pylab_dk.file_organizer import print_help_if_needed, FileOrganizer
 from pylab_dk.data_plot import DataPlot
 from pylab_dk.constants import convert_unit, print_progress_bar, gen_seq, constant_generator, \
-    combined_generator_list, rename_duplicates
+    combined_generator_list, rename_duplicates, time_generator
 from pylab_dk.equip_wrapper import ITCs, ITCMercury, WrapperSR830, Wrapper2400, Wrapper6430, Wrapper2182, \
     Wrapper6221, Meter, SourceMeter
 
@@ -111,7 +111,8 @@ class MeasureManager(DataPlot):
 
         self.instrs["ips"].set_new_field_limits(spherical_limit)
 
-    def ramp_magfield(self, field: float | tuple[float], *, rate: tuple[float] = (0.00333,) * 3, wait: bool = True,
+    def ramp_magfield(self, field: float | int | tuple[float] | list[float], *,
+                      rate: tuple[float] = (0.00333,) * 3, wait: bool = True,
                       tolerance: float = 3e-3, if_plot: bool = False) -> None:
         """
         ramp the magnetic field to the target value with the rate, current the field is only in Z direction limited by the actual instrument setting
@@ -122,8 +123,18 @@ class MeasureManager(DataPlot):
             rate (float): the rate of the field change (T/s)
             wait (bool): whether to wait for the ramping to finish
             tolerance (float): the tolerance of the field (T)
+            if_plot (bool): whether to plot the field during the ramping
         """
+        assert isinstance(field, (float, int, tuple, list)), "The field should be a float or a tuple of 3 floats"
+
         mips = self.instrs["ips"]
+        # skip ramping if the field is already at the target value
+        # only consider z component temporarily
+        fieldz_before = mips.z_measured()
+        fieldz_target = field if isinstance(field, (float, int)) else field[2]
+        if abs(fieldz_target - fieldz_before) < tolerance:
+            return
+
         if max(rate) * 60 > 0.2:
             raise ValueError("The rate is too high, the maximum rate is 0.2 T/min")
         #mips.GRPX.field_ramp_rate(rate[0])
@@ -376,7 +387,8 @@ class MeasureManager(DataPlot):
                 yield instr.curr_angle()
 
     def record_init(self, measure_mods: tuple[str], *var_tuple: float | str,
-                    manual_columns: list[str] = None, return_df: bool = False, special_folder: str = None) \
+                    manual_columns: list[str] = None, return_df: bool = False,
+                    special_folder: str = None, with_timer: bool = True) \
             -> tuple[Path, int, Path] | tuple[Path, int, pd.DataFrame, Path]:
         """
         initialize the record of the measurement and the csv file;
@@ -388,6 +400,7 @@ class MeasureManager(DataPlot):
             manual_columns (list[str]): manually appoint the columns (default to None, automatically generate columns)
             return_df (bool): if the final record dataframe will be returned (default not, and saved as a member)
             special_folder (str): the special folder to store the record file (last subfolder, parents[0])
+            with_timer (bool): whether to contain time generator
         Returns:
             Path: the file path
             int: the number of columns of the record
@@ -415,11 +428,11 @@ class MeasureManager(DataPlot):
         if manual_columns is not None:
             columns_lst = manual_columns
         else:
-            columns_lst = ["time"]
+            columns_lst = ["time"] if with_timer else []
             for name, detail in zip(list(pure_name_lst), mod_detail_lst):
                 if detail["source_sense"] == "source":
                     columns_lst.append(f"{name}_source")
-                elif name == "V" and ac_dc == "ac":
+                elif name == "V" and ac_dc == "ac":  # note the "sense" is assumed here
                     columns_lst += ["X", "Y", "R", "Theta"]
                 else:
                     columns_lst.append(name)
@@ -434,7 +447,7 @@ class MeasureManager(DataPlot):
 
     def record_update(self, file_path: Path, record_num: int, record_tuple: tuple[float],
                       target_df: pd.DataFrame = None,
-                      force_write: bool = False, with_time: bool = True, nocache: bool = False) -> None:
+                      force_write: bool = False, nocache: bool = False) -> None:
         """
         update the record of the measurement and also control the size of dataframe
         when the length of current_measure dataframe is larger than 7,
@@ -445,8 +458,6 @@ class MeasureManager(DataPlot):
             record_tuple (tuple): tuple of the records, with no time column, so length is 1 shorter
             target_df (pd.DataFrame): dataframe to be updated (default using the self.dfs['current_measure'])
             force_write (bool): whether to force write the record
-            with_time (bool): whether to record the time (first column), note the time column
-                is by default included by record_init method
             nocache (bool): whether to keep store all data in memory, if true,
                 the dataframe will be written to the file INCREMENTALLY and reset to EMPTY
                 (necessary for plotting, only turn on when dataset is extremely large
@@ -458,14 +469,8 @@ class MeasureManager(DataPlot):
         else:
             curr_df = target_df
 
-        if with_time:
-            # the time is updated here, no need to be provided
-            assert len(record_tuple) == record_num - 1, "The number of columns does not match"
-            curr_df.loc[len(curr_df)] = (
-                    [datetime.datetime.now().strftime("%y-%m-%d_%H:%M:%S")] + list(record_tuple))
-        else:
-            assert len(record_tuple) == record_num, "The number of columns does not match"
-            curr_df.loc[len(curr_df)] = list(record_tuple)
+        assert len(record_tuple) == record_num, "The number of columns does not match"
+        curr_df.loc[len(curr_df)] = list(record_tuple)
         length = len(curr_df)
         if nocache:
             if length >= 7 or force_write:
@@ -482,7 +487,7 @@ class MeasureManager(DataPlot):
                          wrapper_lst: list[Meter | SourceMeter] = None, compliance_lst: list[float | str],
                          sr830_current_resistor: float = None, if_combine_gen: bool = True,
                          sweep_tables: list[list[float | str, ...]] | tuple[tuple[float | str, ...]] = None,
-                         special_name: str = None) -> dict:
+                         special_name: str = None, with_timer: bool = True) -> dict:
         """
         do the preset of measurements and return the generators, filepath and related info
         1. meter setup should be done before calling this method, they will be bound to generators
@@ -505,6 +510,7 @@ class MeasureManager(DataPlot):
             sweep_tables (list[list[float | str, ...]]): the list of the sweep tables for manual sweep,
                                 the table will be fetched and used according to the order from left to right(0->1->2...)
             special_name (str): the special name used for subfolder to avoid mixing under the same measurement name
+            with_timer (bool): whether to contain time generator
 
         Returns:
             dict: a dictionary containing the list of generators, dataframe csv filepath and record number
@@ -519,8 +525,7 @@ class MeasureManager(DataPlot):
         # init record dataframe
         file_path, record_num, record_plot_path = self.record_init(measure_mods, *var_tuple,
                                                                    special_folder=special_name)
-        # init plotly canvas
-        rec_lst = []  # generators list
+        rec_lst = [time_generator()] if with_timer else []
 
         # =============assemble the record generators into one list==============
         # note multiple sweeps result in multidimensional mapping

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import re
 import sys
+from datetime import datetime
 from functools import wraps
 from typing import Literal, Generator
 
@@ -177,6 +178,17 @@ def constant_generator(value, repeat: int | Literal["inf"] = "inf"):
         while idx < repeat:
             idx += 1
             yield value
+
+
+def time_generator(format_str: str = "%Y-%m-%d_%H:%M:%S"):
+    """
+    generate current time always
+
+    Args:
+        format_str (str): the format of the time
+    """
+    while True:
+        yield datetime.now().strftime(format_str)
 
 
 def combined_generator_list(lst_gens: list[Generator]):

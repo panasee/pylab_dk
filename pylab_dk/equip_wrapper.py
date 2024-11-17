@@ -1002,7 +1002,19 @@ class ITC(ABC, DataPlot):
         thermalize_counter (int): the number of times to thermalize the sample if_plot (bool): whether to plot the
         temperature change
         """
-        if self.temperature < temp - 100:
+
+        def tolerance_T(T: float):
+            """
+            set the tolerance to judge if ramping is needed
+            """
+            if T > 10:
+                return T / 1000
+            else:
+                return 0.005
+
+        if abs(self.temperature - temp) < tolerance_T(temp):
+            return
+        elif self.temperature < temp - 100:
             trend = "up-huge"
         elif self.temperature > temp + 100:
             trend = "down-huge"
@@ -1042,7 +1054,7 @@ class ITC(ABC, DataPlot):
         print("Thermalizing finished")
 
     def ramp_to_temperature(self, temp, *, delta=0.01, check_interval=1, stability_counter=60, thermalize_counter=60,
-                            pid=None, ramp_rate=None, wait=True, if_plot=False):
+                            pid: dict = None, ramp_rate=None, wait=True, if_plot=False):
         """ramp temperature to the target value (not necessary sample temperature)"""
         self.temperature_set = temp
         if pid is not None:
@@ -1146,7 +1158,7 @@ class ITCMercury(ITC):
         if ramp_rate is not None:
             self.mercury.probe_ramp_rate(ramp_rate)
             # self.mercury.vti_heater_rate(ramp_rate)
-            self.mercury.probe_temp_ramp_mode("ON")
+            self.mercury.probe_temp_ramp_mode("ON")  # ramp_mode means limited ramping rate mode
         else:
             self.mercury.probe_temp_ramp_mode("OFF")
         if wait:
@@ -1227,6 +1239,9 @@ class ITCs(ITC):
             itc_here = self.itc_up
         elif itc_name == "down":
             itc_here = self.itc_down
+        else:
+            print("Please specify the ITC to set")
+            return
         itc_here.temperature_setpoint = temp
         if P is not None and I is not None and D is not None:
             itc_here.auto_pid = False

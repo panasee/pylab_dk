@@ -198,7 +198,7 @@ class FileOrganizer:
             Tuple[str, str]: The mainname_str and the namestr
             or
             Tuple[str, str, list[dict]]: The mainname_str, the namestr and the mods_detail_dicts_lst
-            mainname_str: str "sources-senses-others"
+            mainname_str: str "sources-senses-others" (e.g. "I-VV-TB")
             mods_detail_dicts_lst: list[dict["ac_dc","sweep_fix","source_sense"]]
         """
         source_dict = {"mainname": [], "indexes": [], "namestr": []}
