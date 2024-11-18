@@ -5,7 +5,7 @@ initialzed right before the measurement, as there may be a long time between loa
 possibilities of parameter changing"""
 import copy
 from itertools import product
-from typing import Literal, Generator, Optional
+from typing import Literal, Generator, Optional, Sequence
 import time
 import datetime
 import gc
@@ -673,15 +673,30 @@ class MeasureManager(DataPlot):
         return instr
 
     @staticmethod
-    def create_mapping(*lists: tuple[float | str, ...] | list[float | str, ...] | np.ndarray) \
+    def create_mapping(*lists: Sequence[float | str],
+                       idxs: Sequence[int] = None) \
             -> tuple[tuple[float | str, ...]]:
         """
         create the mapping of the lists, return the tuple of the mapping
-        e.g.: create_mapping([1,2],[4,6]) -> ((1,4),(1,6),(2,4),(2,6))
+        e.g.: create_mapping([1,2],[4,6], idx=(0,1)) -> ((1,4),(1,6),(2,4),(2,6))
+
+        Args:
+            lists (Sequence): the lists to be mapped
+            idxs (Sequence): (from 0) the indexes of the lists (the first index corresponds to the first list)
         """
-        mat = product(*lists)
+        if idxs is None:
+            rearrange_lsts = lists
+        else:
+            rearrange_lsts = [[]] * len(lists)
+            for n, idx in enumerate(idxs):
+                rearrange_lsts[idx] = lists[n]
+        mat = product(*rearrange_lsts)
         mat_cols = tuple(zip(*mat))
-        return mat_cols
+        if idxs is not None:
+            restore_lsts = tuple([mat_cols[i] for i in idxs])
+        else:
+            restore_lsts = mat_cols
+        return restore_lsts
 
     @staticmethod
     def get_visa_resources() -> tuple[str, ...]:
