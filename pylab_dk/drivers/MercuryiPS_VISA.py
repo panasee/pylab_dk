@@ -8,25 +8,36 @@ from __future__ import annotations
 import logging
 import time
 from functools import partial
-from typing import Any, Callable, cast
+from typing import Any, TYPE_CHECKING, cast
 
 import numpy as np
 import numpy.typing as npt
 from packaging import version
 
-from qcodes.instrument.channel import InstrumentChannel
-from qcodes.instrument.visa import VisaInstrument
+from qcodes.instrument import (
+    InstrumentBaseKWArgs,
+    InstrumentChannel,
+    VisaInstrument,
+    VisaInstrumentKWArgs,
+)
 from qcodes.math_utils import FieldVector
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from typing_extensions import Unpack
+
+    from qcodes.parameters import Parameter
+
 log = logging.getLogger(__name__)
-visalog = logging.getLogger('qcodes.instrument.visa')
+visalog = logging.getLogger("qcodes.instrument.visa")
 
 
 def _response_preparser(bare_resp: str) -> str:
     """
     Pre-parse response from the instrument
     """
-    return bare_resp.replace(':', '')
+    return bare_resp.replace(":", "")
 
 
 def _signal_parser(our_scaling: float, response: str) -> float:
@@ -41,10 +52,9 @@ def _signal_parser(our_scaling: float, response: str) -> float:
 
     # there might be a scale before the unit. We only want to deal in SI
     # units, so we translate the scale
-    scale_to_factor = {'n': 1e-9, 'u': 1e-6, 'm': 1e-3,
-                       'k': 1e3, 'M': 1e6}
+    scale_to_factor = {"n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3, "M": 1e6}
 
-    numchars = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '-']
+    numchars = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "-"]
 
     response = _response_preparser(response)
     digits = "".join(d for d in response if d in numchars)
@@ -64,19 +74,29 @@ class OxfordMercuryWorkerPS(InstrumentChannel):
     Class to hold a worker power supply for the Oxford MercuryiPS
     """
 
-    def __init__(self, parent: VisaInstrument, name: str, UID: str) -> None:
+    def __init__(
+        self,
+        parent: VisaInstrument,
+        name: str,
+        UID: str,
+        **kwargs: Unpack[InstrumentBaseKWArgs],
+    ) -> None:
         """
         Args:
             parent: The Instrument instance of the MercuryiPS
             name: The 'colloquial' name of the PS
             UID: The UID as used internally by the MercuryiPS, e.g.
                 'GRPX'
-        """
-        if ':' in UID:
-            raise ValueError('Invalid UID. Must be axis group name or device '
-                             'name, e.g. "GRPX" or "PSU.M1"')
+            **kwargs: Forwarded to base class.
 
-        super().__init__(parent, name)
+        """
+        if ":" in UID:
+            raise ValueError(
+                "Invalid UID. Must be axis group name or device "
+                'name, e.g. "GRPX" or "PSU.M1"'
+            )
+
+        super().__init__(parent, name, **kwargs)
         self.uid = UID
 
         # The firmware update from 2.5 -> 2.6 changed the command
@@ -86,100 +106,154 @@ class OxfordMercuryWorkerPS(InstrumentChannel):
         else:
             self.psu_string = "PSU"
 
-        self.add_parameter('voltage',
-                           label='Output voltage',
-                           get_cmd=partial(self._param_getter, 'SIG:VOLT'),
-                           unit='V',
-                           get_parser=partial(_signal_parser, 1))
+        self.sw_heater: Parameter = self.add_parameter(
+            'sw_heater',
+            label='Switch heater status/set',
+            get_cmd=partial(self._param_getter, "SIG:SWHT"),
+            set_cmd=partial(self._param_setter, "SIG:SWHT"),
+            get_parser=partial(_signal_parser, 1),
+        )
 
-        self.add_parameter('current',
-                           label='Output current',
-                           get_cmd=partial(self._param_getter, 'SIG:CURR'),
-                           unit='A',
-                           get_parser=partial(_signal_parser, 1))
+        self.sw_heater: Parameter = self.add_parameter(
+            "voltage",
+            label="Output voltage",
+            get_cmd=partial(self._param_getter, "SIG:VOLT"),
+            unit="V",
+            get_parser=partial(_signal_parser, 1),
+        )
+        """Parameter voltage"""
 
-        self.add_parameter('current_persistent',
-                           label='Output persistent current',
-                           get_cmd=partial(self._param_getter, 'SIG:PCUR'),
-                           unit='A',
-                           get_parser=partial(_signal_parser, 1))
+        self.voltage: Parameter = self.add_parameter(
+            "voltage",
+            label="Output voltage",
+            get_cmd=partial(self._param_getter, "SIG:VOLT"),
+            unit="V",
+            get_parser=partial(_signal_parser, 1),
+        )
+        """Parameter voltage"""
 
-        self.add_parameter('current_target',
-                           label='Target current',
-                           get_cmd=partial(self._param_getter, 'SIG:CSET'),
-                           unit='A',
-                           get_parser=partial(_signal_parser, 1))
+        self.current: Parameter = self.add_parameter(
+            "current",
+            label="Output current",
+            get_cmd=partial(self._param_getter, "SIG:CURR"),
+            unit="A",
+            get_parser=partial(_signal_parser, 1),
+        )
+        """Parameter current"""
 
-        self.add_parameter('field_target',
-                           label='Target field',
-                           get_cmd=partial(self._param_getter, 'SIG:FSET'),
-                           set_cmd=partial(self._param_setter, 'SIG:FSET'),
-                           unit='T',
-                           get_parser=partial(_signal_parser, 1))
+        self.current_persistent: Parameter = self.add_parameter(
+            "current_persistent",
+            label="Output persistent current",
+            get_cmd=partial(self._param_getter, "SIG:PCUR"),
+            unit="A",
+            get_parser=partial(_signal_parser, 1),
+        )
+        """Parameter current_persistent"""
+
+        self.current_target: Parameter = self.add_parameter(
+            "current_target",
+            label="Target current",
+            get_cmd=partial(self._param_getter, "SIG:CSET"),
+            unit="A",
+            get_parser=partial(_signal_parser, 1),
+        )
+        """Parameter current_target"""
+
+        self.field_target: Parameter = self.add_parameter(
+            "field_target",
+            label="Target field",
+            get_cmd=partial(self._param_getter, "SIG:FSET"),
+            set_cmd=partial(self._param_setter, "SIG:FSET"),
+            unit="T",
+            get_parser=partial(_signal_parser, 1),
+        )
+        """Parameter field_target"""
 
         # NB: The current ramp rate follows the field ramp rate
         # (converted via the ATOB param)
-        self.add_parameter('current_ramp_rate',
-                           label='Ramp rate (current)',
-                           unit='A/s',
-                           get_cmd=partial(self._param_getter, 'SIG:RCST'),
-                           get_parser=partial(_signal_parser, 1 / 60))
+        self.current_ramp_rate: Parameter = self.add_parameter(
+            "current_ramp_rate",
+            label="Ramp rate (current)",
+            unit="A/s",
+            get_cmd=partial(self._param_getter, "SIG:RCST"),
+            get_parser=partial(_signal_parser, 1 / 60),
+        )
+        """Parameter current_ramp_rate"""
 
-        self.add_parameter('field_ramp_rate',
-                           label='Ramp rate (field)',
-                           unit='T/s',
-                           set_cmd=partial(self._param_setter, 'SIG:RFST'),
-                           get_cmd=partial(self._param_getter, 'SIG:RFST'),
-                           get_parser=partial(_signal_parser, 1 / 60),
-                           set_parser=lambda x: x * 60)
+        self.field_ramp_rate: Parameter = self.add_parameter(
+            "field_ramp_rate",
+            label="Ramp rate (field)",
+            unit="T/s",
+            set_cmd=partial(self._param_setter, "SIG:RFST"),
+            get_cmd=partial(self._param_getter, "SIG:RFST"),
+            get_parser=partial(_signal_parser, 1 / 60),
+            set_parser=lambda x: x * 60,
+        )
+        """Parameter field_ramp_rate"""
 
-        self.add_parameter('field',
-                           label='Field strength',
-                           unit='T',
-                           get_cmd=partial(self._param_getter, 'SIG:FLD'),
-                           get_parser=partial(_signal_parser, 1))
+        self.field: Parameter = self.add_parameter(
+            "field",
+            label="Field strength",
+            unit="T",
+            get_cmd=partial(self._param_getter, "SIG:FLD"),
+            get_parser=partial(_signal_parser, 1),
+        )
+        """Parameter field"""
 
-        self.add_parameter('field_persistent',
-                           label='Persistent field strength',
-                           unit='T',
-                           get_cmd=partial(self._param_getter, 'SIG:PFLD'),
-                           get_parser=partial(_signal_parser, 1))
+        self.field_persistent: Parameter = self.add_parameter(
+            "field_persistent",
+            label="Persistent field strength",
+            unit="T",
+            get_cmd=partial(self._param_getter, "SIG:PFLD"),
+            get_parser=partial(_signal_parser, 1),
+        )
+        """Parameter field_persistent"""
 
-        self.add_parameter('ATOB',
-                           label='Current to field ratio',
-                           unit='A/T',
-                           get_cmd=partial(self._param_getter, 'ATOB'),
-                           get_parser=partial(_signal_parser, 1),
-                           set_cmd=partial(self._param_setter, 'ATOB'))
+        self.ATOB: Parameter = self.add_parameter(
+            "ATOB",
+            label="Current to field ratio",
+            unit="A/T",
+            get_cmd=partial(self._param_getter, "ATOB"),
+            get_parser=partial(_signal_parser, 1),
+            set_cmd=partial(self._param_setter, "ATOB"),
+        )
+        """Parameter ATOB"""
 
-        self.add_parameter('ramp_status',
-                           label='Ramp status',
-                           get_cmd=partial(self._param_getter, 'ACTN'),
-                           set_cmd=self._ramp_status_setter,
-                           get_parser=_response_preparser,
-                           val_mapping={'HOLD': 'HOLD',
-                                        'TO SET': 'RTOS',
-                                        'CLAMP': 'CLMP',
-                                        'TO ZERO': 'RTOZ'})
+        self.ramp_status: Parameter = self.add_parameter(
+            "ramp_status",
+            label="Ramp status",
+            get_cmd=partial(self._param_getter, "ACTN"),
+            set_cmd=self._ramp_status_setter,
+            get_parser=_response_preparser,
+            val_mapping={
+                "HOLD": "HOLD",
+                "TO SET": "RTOS",
+                "CLAMP": "CLMP",
+                "TO ZERO": "RTOZ",
+            },
+        )
+        """Parameter ramp_status"""
 
     def ramp_to_target(self) -> None:
         """
         Unconditionally ramp this PS to its target
         """
         status = self.ramp_status()
-        if status == 'CLAMP':
-            self.ramp_status('HOLD')
-        self.ramp_status('TO SET')
+        if status == "CLAMP":
+            self.ramp_status("HOLD")
+        self.ramp_status("TO SET")
 
     def _ramp_status_setter(self, cmd: str) -> None:
         status_now = self.ramp_status()
-        if status_now == 'CLAMP' and cmd == 'RTOS':
-            raise ValueError(f'Error in ramping unit {self.uid}: '
-                             'Can not ramp to target value; power supply is '
-                             'clamped. Unclamp first by setting ramp status '
-                             'to HOLD.')
+        if status_now == "CLAMP" and cmd == "RTOS":
+            raise ValueError(
+                f"Error in ramping unit {self.uid}: "
+                "Can not ramp to target value; power supply is "
+                "clamped. Unclamp first by setting ramp status "
+                "to HOLD."
+            )
         else:
-            partial(self._param_setter, 'ACTN')(cmd)
+            partial(self._param_setter, "ACTN")(cmd)
 
     def _param_getter(self, get_cmd: str) -> str:
         """
@@ -227,21 +301,21 @@ class OxfordMercuryiPS(VisaInstrument):
     supply
     """
 
+    default_terminator = "\n"
+
     def __init__(
-            self,
-            name: str,
-            address: str,
-            visalib: str | None = None,
-            field_limits: Callable[[float, float, float], bool] | None = None,
-            **kwargs: Any,
+        self,
+        name: str,
+        address: str,
+        *,
+        field_limits: Callable[[float, float, float], bool] | None = None,
+        **kwargs: Unpack[VisaInstrumentKWArgs],
     ) -> None:
         """
         Args:
             name: The name to give this instrument internally in QCoDeS
             address: The VISA resource of the instrument. Note that a
                 socket connection to port 7020 must be made
-            visalib: The VISA library to use. Leave blank if not in simulation
-                mode.
             field_limits: A function describing the allowed field
                 range (T). The function shall take (x, y, z) as an input and
                 return a boolean describing whether that field value is
@@ -250,117 +324,123 @@ class OxfordMercuryiPS(VisaInstrument):
         """
 
         if field_limits is not None and not (callable(field_limits)):
-            raise ValueError('Got wrong type of field_limits. Must be a '
-                             'function from (x, y, z) -> Bool. Received '
-                             f'{type(field_limits)} instead.')
+            raise ValueError(
+                "Got wrong type of field_limits. Must be a "
+                "function from (x, y, z) -> Bool. Received "
+                f"{type(field_limits)} instead."
+            )
 
         pyvisa_sim_file = kwargs.get("pyvisa_sim_file", None)
         # ensure that a socket is used unless we are in simulation mode
         if (
-                not address.endswith("SOCKET")
-                and not address.endswith("@sim")
-                and not pyvisa_sim_file
+            not address.endswith("SOCKET")
+            and not address.endswith("@sim")
+            and not pyvisa_sim_file
         ):
             raise ValueError(
                 "Incorrect VISA resource name. Must be of type "
                 "TCPIP0::XXX.XXX.XXX.XXX::7020::SOCKET."
             )
 
-        super().__init__(name, address, terminator='\n', visalib=visalib,
-                         **kwargs)
-        self.firmware = self.IDN()['firmware']
+        super().__init__(name, address, **kwargs)
+        self.firmware = self.IDN()["firmware"]
 
         # TODO: Query instrument to ensure which PSUs are actually present
-        for grp in ['GRPX', 'GRPY', 'GRPZ']:
+        for grp in ["GRPX", "GRPY", "GRPZ"]:
             psu_name = grp
             psu = OxfordMercuryWorkerPS(self, psu_name, grp)
             self.add_submodule(psu_name, psu)
 
-        self._field_limits = (field_limits if field_limits else
-                              lambda x, y, z: True)
+        self._field_limits = field_limits if field_limits else lambda x, y, z: True
 
-        self._target_vector = FieldVector(x=self.GRPX.field(),
-                                          y=self.GRPY.field(),
-                                          z=self.GRPZ.field())
+        self._target_vector = FieldVector(
+            x=self.GRPX.field(), y=self.GRPY.field(), z=self.GRPZ.field()
+        )
 
-        self.pt2_temp_addr = 'DEV:DB7.T1:TEMP'
-        self.magnet_temp_addr = 'DEV:MB1.T1:TEMP'
-        self.pt1_temp_addr = 'DEV:DB8.T1:TEMP'
+        self.magnet_temp: Parameter = self.add_parameter(
+                           name='magnet_temp',
+                           label='Magnet Temperature',
+                           unit='K',
+                           docstring='Temperature of the magnet sensor',
+                           get_cmd="READ:" + self.magnet_temp_addr + ":SIG:TEMP?",
+                           get_parser=self._temp_parser
+                           )
+
+        self.pt1_temp: Parameter = self.add_parameter(
+                           name='pt1_temp',
+                           label='Magnet Temperature',
+                           unit='K',
+                           docstring='Temperature of the magnet sensor',
+                           get_cmd="READ:" + self.pt1_temp_addr + ":SIG:TEMP?",
+                           get_parser=self._temp_parser
+                           )
 
         for coord, unit in zip(
-                ['x', 'y', 'z', 'r', 'theta', 'phi', 'rho'],
-                ['T', 'T', 'T', 'T', 'degrees', 'degrees', 'T']):
-            self.add_parameter(name=f'{coord}_target',
-                               label=f'{coord.upper()} target field',
-                               unit=unit,
-                               get_cmd=partial(self._get_component, coord),
-                               set_cmd=partial(self._set_target, coord))
+            ["x", "y", "z", "r", "theta", "phi", "rho"],
+            ["T", "T", "T", "T", "degrees", "degrees", "T"],
+        ):
+            self.add_parameter(
+                name=f"{coord}_target",
+                label=f"{coord.upper()} target field",
+                unit=unit,
+                get_cmd=partial(self._get_component, coord),
+                set_cmd=partial(self._set_target, coord),
+            )
 
-            self.add_parameter(name=f'{coord}_measured',
-                               label=f'{coord.upper()} measured field',
-                               unit=unit,
-                               get_cmd=partial(self._get_measured, [coord]))
+            self.add_parameter(
+                name=f"{coord}_measured",
+                label=f"{coord.upper()} measured field",
+                unit=unit,
+                get_cmd=partial(self._get_measured, [coord]),
+            )
 
-            self.add_parameter(name=f'{coord}_ramp',
-                               label=f'{coord.upper()} ramp field',
-                               unit=unit,
-                               docstring='A safe ramp for each coordinate',
-                               get_cmd=partial(self._get_component, coord),
-                               set_cmd=partial(self._set_target_and_ramp,
-                                               coord, 'safe'))
+            self.add_parameter(
+                name=f"{coord}_ramp",
+                label=f"{coord.upper()} ramp field",
+                unit=unit,
+                docstring="A safe ramp for each coordinate",
+                get_cmd=partial(self._get_component, coord),
+                set_cmd=partial(self._set_target_and_ramp, coord, "safe"),
+            )
 
-            self.add_parameter('pt2_temp',
-                               label='PT2 Temperature',
-                               unit='K',
-                               docstring='Temperature of the PT2 sensor',
-                               get_cmd="READ:" + self.pt2_temp_addr + ":SIG:TEMP?",
-                               get_parser=self._temp_parser
-                               )
-
-            self.add_parameter('magnet_temp',
-                               label='Magnet Temperature',
-                               unit='K',
-                               docstring='Temperature of the magnet sensor',
-                               get_cmd="READ:" + self.magnet_temp_addr + ":SIG:TEMP?",
-                               get_parser=self._temp_parser
-                               )
-
-            self.add_parameter('pt1_temp',
-                               label='Magnet Temperature',
-                               unit='K',
-                               docstring='Temperature of the magnet sensor',
-                               get_cmd="READ:" + self.pt1_temp_addr + ":SIG:TEMP?",
-                               get_parser=self._temp_parser
-                               )
-
-            if coord in ['r', 'theta', 'phi', 'rho']:
-                self.add_parameter(name=f'{coord}_simulramp',
-                                   label=f'{coord.upper()} ramp field',
-                                   unit=unit,
-                                   docstring='A simultaneous blocking ramp for'
-                                             ' a combined coordinate',
-                                   get_cmd=partial(self._get_component, coord),
-                                   set_cmd=partial(self._set_target_and_ramp,
-                                                   coord, 'simul_block'))
+            if coord in ["r", "theta", "phi", "rho"]:
+                self.add_parameter(
+                    name=f"{coord}_simulramp",
+                    label=f"{coord.upper()} ramp field",
+                    unit=unit,
+                    docstring="A simultaneous blocking ramp for"
+                    " a combined coordinate",
+                    get_cmd=partial(self._get_component, coord),
+                    set_cmd=partial(self._set_target_and_ramp, coord, "simul_block"),
+                )
 
         # FieldVector-valued parameters #
 
-        self.add_parameter(name="field_target",
-                           label="target field",
-                           unit="T",
-                           get_cmd=self._get_target_field,
-                           set_cmd=self._set_target_field)
+        self.field_target: Parameter = self.add_parameter(
+            name="field_target",
+            label="target field",
+            unit="T",
+            get_cmd=self._get_target_field,
+            set_cmd=self._set_target_field,
+        )
+        """Parameter field_target"""
 
-        self.add_parameter(name="field_measured",
-                           label="measured field",
-                           unit="T",
-                           get_cmd=self._get_field)
+        self.field_measured: Parameter = self.add_parameter(
+            name="field_measured",
+            label="measured field",
+            unit="T",
+            get_cmd=self._get_field,
+        )
+        """Parameter field_measured"""
 
-        self.add_parameter(name="field_ramp_rate",
-                           label="ramp rate",
-                           unit="T/s",
-                           get_cmd=self._get_ramp_rate,
-                           set_cmd=self._set_ramp_rate)
+        self.field_ramp_rate: Parameter = self.add_parameter(
+            name="field_ramp_rate",
+            label="ramp rate",
+            unit="T/s",
+            get_cmd=self._get_ramp_rate,
+            set_cmd=self._set_ramp_rate,
+        )
+        """Parameter field_ramp_rate"""
 
         self.connect_message()
 
@@ -372,12 +452,7 @@ class OxfordMercuryiPS(VisaInstrument):
         return self._target_vector.get_components(coordinate)[0]
 
     def _get_target_field(self) -> FieldVector:
-        return FieldVector(
-            **{
-                coord: self._get_component(coord)
-                for coord in 'xyz'
-            }
-        )
+        return FieldVector(**{coord: self._get_component(coord) for coord in "xyz"})
 
     def _get_ramp_rate(self) -> FieldVector:
         return FieldVector(
@@ -396,9 +471,9 @@ class OxfordMercuryiPS(VisaInstrument):
         Get the measured value of a coordinate. Measures all three fields
         and computes whatever coordinate we asked for.
         """
-        meas_field = FieldVector(x=self.GRPX.field(),
-                                 y=self.GRPY.field(),
-                                 z=self.GRPZ.field())
+        meas_field = FieldVector(
+            x=self.GRPX.field(), y=self.GRPY.field(), z=self.GRPZ.field()
+        )
 
         if len(coordinates) == 1:
             return meas_field.get_components(*coordinates)[0]
@@ -407,9 +482,7 @@ class OxfordMercuryiPS(VisaInstrument):
 
     def _get_field(self) -> FieldVector:
         return FieldVector(
-            x=self.x_measured(),
-            y=self.y_measured(),
-            z=self.z_measured()
+            x=self.x_measured(), y=self.y_measured(), z=self.z_measured()
         )
 
     def _set_target(self, coordinate: str, target: float) -> None:
@@ -421,24 +494,25 @@ class OxfordMercuryiPS(VisaInstrument):
         valid_vec = FieldVector()
         valid_vec.copy(self._target_vector)
         valid_vec.set_component(**{coordinate: target})
-        components = valid_vec.get_components('x', 'y', 'z')
+        components = valid_vec.get_components("x", "y", "z")
         if not self._field_limits(*components):
-            raise ValueError(f'Cannot set {coordinate} target to {target}, '
-                             'that would violate the field_limits. ')
+            raise ValueError(
+                f"Cannot set {coordinate} target to {target}, "
+                "that would violate the field_limits. "
+            )
 
         # update our internal target cache
         self._target_vector.set_component(**{coordinate: target})
 
         # actually assign the target on the workers
-        cartesian_targ = self._target_vector.get_components('x', 'y', 'z')
+        cartesian_targ = self._target_vector.get_components("x", "y", "z")
         for targ, worker in zip(cartesian_targ, self.submodules.values()):
             if not isinstance(worker, OxfordMercuryWorkerPS):
-                raise RuntimeError(f"Expected a MercuryWorkerPS but got "
-                                   f"{type(worker)}")
+                raise RuntimeError(f"Expected a MercuryWorkerPS but got {type(worker)}")
             worker.field_target(targ)
 
     def _set_target_field(self, field: FieldVector) -> None:
-        for coord in 'xyz':
+        for coord in "xyz":
             self._set_target(coord, field[coord])
 
     def get_idn(self) -> dict[str, str | None]:
@@ -448,8 +522,8 @@ class OxfordMercuryiPS(VisaInstrument):
         Returns:
             The normal IDN dict
         """
-        raw_idn_string = self.ask('*IDN?')
-        resps = raw_idn_string.split(':')
+        raw_idn_string = self.ask("*IDN?")
+        resps = raw_idn_string.split(":")
 
         idn_dict: dict[str, str | None] = {
             "model": resps[2],
@@ -468,8 +542,7 @@ class OxfordMercuryiPS(VisaInstrument):
         """
         for worker in self.submodules.values():
             if not isinstance(worker, OxfordMercuryWorkerPS):
-                raise RuntimeError(f"Expected a MercuryWorkerPS but got "
-                                   f"{type(worker)}")
+                raise RuntimeError(f"Expected a MercuryWorkerPS but got {type(worker)}")
             worker.ramp_to_target()
 
     def _ramp_simultaneously_blocking(self) -> None:
@@ -482,10 +555,9 @@ class OxfordMercuryiPS(VisaInstrument):
 
         for worker in self.submodules.values():
             if not isinstance(worker, OxfordMercuryWorkerPS):
-                raise RuntimeError(f"Expected a MercuryWorkerPS but got "
-                                   f"{type(worker)}")
+                raise RuntimeError(f"Expected a MercuryWorkerPS but got {type(worker)}")
             # wait for the ramp to finish, we don't care about the order
-            while worker.ramp_status() == 'TO SET':
+            while worker.ramp_status() == "TO SET":
                 time.sleep(0.1)
 
         self.update_field()
@@ -507,10 +579,10 @@ class OxfordMercuryiPS(VisaInstrument):
             worker.ramp_to_target()
             # now just wait for the ramp to finish
             # (unless we are testing)
-            if self.visabackend == 'sim':
+            if self.visabackend == "sim":
                 pass
             else:
-                while worker.ramp_status() == 'TO SET':
+                while worker.ramp_status() == "TO SET":
                     time.sleep(0.1)
 
         self.update_field()
@@ -519,25 +591,25 @@ class OxfordMercuryiPS(VisaInstrument):
         """
         Update all the field components.
         """
-        coords = ['x', 'y', 'z', 'r', 'theta', 'phi', 'rho']
+        coords = ["x", "y", "z", "r", "theta", "phi", "rho"]
         _ = self._get_field()
-        [getattr(self, f'{i}_measured').get() for i in coords]
+        [getattr(self, f"{i}_measured").get() for i in coords]
 
     def is_ramping(self) -> bool:
         """
         Returns True if any axis has a ramp status that is either 'TO SET' or
         'TO ZERO'
         """
-        ramping_statuus = ['TO SET', 'TO ZERO']
+        ramping_statuus = ["TO SET", "TO ZERO"]
         is_x_ramping = self.GRPX.ramp_status() in ramping_statuus
         is_y_ramping = self.GRPY.ramp_status() in ramping_statuus
         is_z_ramping = self.GRPZ.ramp_status() in ramping_statuus
 
         return is_x_ramping or is_y_ramping or is_z_ramping
 
-    def set_new_field_limits(self, limit_func: Callable[[float,
-                                                         float,
-                                                         float], bool]) -> None:
+    def set_new_field_limits(
+        self, limit_func: Callable[[float, float, float], bool]
+    ) -> None:
         """
         Assign a new field limit function to the driver
 
@@ -547,10 +619,12 @@ class OxfordMercuryiPS(VisaInstrument):
         """
 
         # first check that the current target is allowed
-        if not limit_func(*self._target_vector.get_components('x', 'y', 'z')):
-            raise ValueError('Can not assign new limit function; present '
-                             'target is illegal. Please change the target '
-                             'and try again.')
+        if not limit_func(*self._target_vector.get_components("x", "y", "z")):
+            raise ValueError(
+                "Can not assign new limit function; present "
+                "target is illegal. Please change the target "
+                "and try again."
+            )
 
         self._field_limits = limit_func
 
@@ -567,27 +641,29 @@ class OxfordMercuryiPS(VisaInstrument):
               blocking way that ensures that the total field stays within the
               safe region (provided that this region is convex).
         """
-        if mode not in ['simul', 'safe', 'simul_block']:
-            raise ValueError('Invalid ramp mode. Please provide either "simul"'
-                             ', "safe" or "simul_block".')
+        if mode not in ["simul", "safe", "simul_block"]:
+            raise ValueError(
+                'Invalid ramp mode. Please provide either "simul"'
+                ', "safe" or "simul_block".'
+            )
 
-        meas_vals = self._get_measured(['x', 'y', 'z'])
+        meas_vals = self._get_measured(["x", "y", "z"])
         # we asked for three coordinates, so we know that we got a list
         meas_vals = cast(list[float], meas_vals)
 
         for cur, worker in zip(meas_vals, self.submodules.values()):
             if not isinstance(worker, OxfordMercuryWorkerPS):
-                raise RuntimeError(f"Expected a MercuryWorkerPS but got "
-                                   f"{type(worker)}")
+                raise RuntimeError(f"Expected a MercuryWorkerPS but got {type(worker)}")
             if worker.field_target() != cur:
                 if worker.field_ramp_rate() == 0:
-                    raise ValueError(f'Can not ramp {worker}; ramp rate set to'
-                                     ' zero!')
+                    raise ValueError(f"Can not ramp {worker}; ramp rate set to zero!")
 
         # then the actual ramp
-        {'simul': self._ramp_simultaneously,
-         'safe': self._ramp_safely,
-         'simul_block': self._ramp_simultaneously_blocking}[mode]()
+        {
+            "simul": self._ramp_simultaneously,
+            "safe": self._ramp_safely,
+            "simul_block": self._ramp_simultaneously_blocking,
+        }[mode]()
 
     def _set_target_and_ramp(self, coordinate: str, mode: str, target: float) -> None:
         """Convenient method to combine setting target and ramping"""
@@ -608,20 +684,20 @@ class OxfordMercuryiPS(VisaInstrument):
         resp = self.visa_handle.query(cmd)
         visalog.debug(f"Got instrument response: {resp}")
 
-        if 'INVALID' in resp:
-            log.error(f'Invalid command. Got response: {resp}')
+        if "INVALID" in resp:
+            log.error(f"Invalid command. Got response: {resp}")
             base_resp = resp
         # if the command was not invalid, it can either be a SET or a READ
         # SET:
-        elif resp.endswith('VALID'):
-            base_resp = resp.split(':')[-2]
+        elif resp.endswith("VALID"):
+            base_resp = resp.split(":")[-2]
         # READ:
         else:
             # For "normal" commands only (e.g. '*IDN?' is excepted):
             # the response of a valid command echoes back said command,
             # thus we remove that part
-            base_cmd = cmd.replace('READ:', '')
-            base_resp = resp.replace(f'STAT:{base_cmd}', '')
+            base_cmd = cmd.replace("READ:", "")
+            base_resp = resp.replace(f"STAT:{base_cmd}", "")
 
         return base_resp
 
