@@ -2,6 +2,7 @@
 
 import numpy as np
 from qcodes.instrument.visa import VisaInstrument
+from qcodes.parameters import Parameter
 from qcodes.utils import validators as vals
 
 
@@ -53,7 +54,7 @@ class MercuryITC(VisaInstrument):
         self.probe_list = None
         # Assign all the module addresses to the class
         self.__dict__.update(locals())
-        self.pres_loop_addr = self.pressure_addr.replace("PRES","TEMP")
+        self.pres_loop_addr = self.pressure_addr.replace("PRES", "TEMP")
         # noinspection PyUnboundLocalVariable
         del self.self
 
@@ -72,222 +73,255 @@ class MercuryITC(VisaInstrument):
         self.ask('SET:' + self.pressure_addr + ':LOOP:AUX:' + self.needle_valve_addr.split(':')[1])
         self.ask('SET:' + self.vti_temp_addr + ':LOOP:HTR:' + self.vti_heater_addr.split(':')[1])
 
-        self.add_parameter('probe_temp',
-                           label='Probe Temperature',
-                           unit='K',
-                           docstring='Temperature of the probe sensor',
-                           get_cmd="READ:" + self.probe_temp_addr + ":SIG:TEMP?",
-                           get_parser=self._temp_parser,
-                           set_cmd=lambda x: self.temp_setpoint(x),
-                           vals=vals.Numbers(min_value=1.3, max_value=300)
-                           )
-        self.add_parameter('temp_setpoint',
-                           label='Heater Temperature Setpoint',
-                           unit='K',
-                           docstring='Temperature setpoint for the heater',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:TSET?',
-                           get_parser=self._temp_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + f':LOOP:TSET:{x}')
-                           )
-        self.add_parameter('probe_heater',
-                           label='Probe Heater Percentage',
-                           docstring='Percentage of the probe heater',
-                           get_cmd="READ:" + self.probe_heater_addr + ":SIG:PERC?",
-                           get_parser=self._perc_parser,
-                           set_cmd=lambda x: self.probe_heater_setpoint(x),
-                           vals=vals.Numbers(min_value=0, max_value=100)
-                           )
-        self.add_parameter('probe_heater_setpoint',
-                           label='Heater Percentage Setpoint',
-                           docstring='Percentage setpoint for the heater',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:HSET?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + f':LOOP:HSET:{x}')
-                           )
+        self.probe_temp: Parameter = self.add_parameter('probe_temp',
+                                                        label='Probe Temperature',
+                                                        unit='K',
+                                                        docstring='Temperature of the probe sensor',
+                                                        get_cmd="READ:" + self.probe_temp_addr + ":SIG:TEMP?",
+                                                        get_parser=self._temp_parser,
+                                                        set_cmd=lambda x: self.temp_setpoint(x),
+                                                        vals=vals.Numbers(min_value=1.3, max_value=300)
+                                                        )
+        self.temp_setpoint: Parameter = self.add_parameter('temp_setpoint',
+                                                           label='Heater Temperature Setpoint',
+                                                           unit='K',
+                                                           docstring='Temperature setpoint for the heater',
+                                                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:TSET?',
+                                                           get_parser=self._temp_parser,
+                                                           set_cmd=lambda x: self.ask(
+                                                               'SET:' + self.probe_temp_addr + f':LOOP:TSET:{x}')
+                                                           )
+        self.probe_heater: Parameter = self.add_parameter('probe_heater',
+                                                          label='Probe Heater Percentage',
+                                                          docstring='Percentage of the probe heater',
+                                                          get_cmd="READ:" + self.probe_heater_addr + ":SIG:PERC?",
+                                                          get_parser=self._perc_parser,
+                                                          set_cmd=lambda x: self.probe_heater_setpoint(x),
+                                                          vals=vals.Numbers(min_value=0, max_value=100)
+                                                          )
+        self.probe_heater_setpoint: Parameter = self.add_parameter('probe_heater_setpoint',
+                                                                   label='Heater Percentage Setpoint',
+                                                                   docstring='Percentage setpoint for the heater',
+                                                                   get_cmd='READ:' + self.probe_temp_addr + ':LOOP:HSET?',
+                                                                   get_parser=self._float_parser_nounits,
+                                                                   set_cmd=lambda x: self.ask(
+                                                                       'SET:' + self.probe_temp_addr + f':LOOP:HSET:{x}')
+                                                                   )
 
-        self.add_parameter('vti_temp',
-                           label='VTI Temperature',
-                           unit='K',
-                           docstring='Temperature of the VTI',
-                           get_cmd="READ:" + self.vti_temp_addr + ":SIG:TEMP?",
-                           get_parser=self._temp_parser,
-                           set_cmd=lambda x: self.vti_temp_setpoint(x),
-                           )
-        self.add_parameter('vti_temp_setpoint',
-                           label='VTI heater Temperature Setpoint',
-                           unit='K',
-                           docstring='Temperature setpoint for the VTI heater',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:TSET?',
-                           get_parser=self._temp_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + f':LOOP:TSET:{x}')
-                           )
-        self.add_parameter('vti_heater',
-                           label='VTI Heater Percentage',
-                           docstring='Percentage of the vti heater',
-                           get_cmd="READ:" + self.vti_heater_addr + ":SIG:PERC?",
-                           get_parser=self._perc_parser,
-                           set_cmd=lambda x: self.probe_heater_setpoint(x),
-                           vals=vals.Numbers(min_value=0, max_value=100)
-                           )
-        self.add_parameter('vti_heater_setpoint',
-                           label='Heater Percentage Setpoint',
-                           docstring='Percentage setpoint for the heater',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:HSET?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + f':LOOP:HSET:{x}')
-                           )
+        self.vti_temp: Parameter = self.add_parameter('vti_temp',
+                                                      label='VTI Temperature',
+                                                      unit='K',
+                                                      docstring='Temperature of the VTI',
+                                                      get_cmd="READ:" + self.vti_temp_addr + ":SIG:TEMP?",
+                                                      get_parser=self._temp_parser,
+                                                      set_cmd=lambda x: self.vti_temp_setpoint(x),
+                                                      )
+        self.vti_temp_setpoint: Parameter = self.add_parameter('vti_temp_setpoint',
+                                                               label='VTI heater Temperature Setpoint',
+                                                               unit='K',
+                                                               docstring='Temperature setpoint for the VTI heater',
+                                                               get_cmd='READ:' + self.vti_temp_addr + ':LOOP:TSET?',
+                                                               get_parser=self._temp_parser,
+                                                               set_cmd=lambda x: self.ask(
+                                                                   'SET:' + self.vti_temp_addr + f':LOOP:TSET:{x}')
+                                                               )
+        self.vti_heater: Parameter = self.add_parameter('vti_heater',
+                                                        label='VTI Heater Percentage',
+                                                        docstring='Percentage of the vti heater',
+                                                        get_cmd="READ:" + self.vti_heater_addr + ":SIG:PERC?",
+                                                        get_parser=self._perc_parser,
+                                                        set_cmd=lambda x: self.probe_heater_setpoint(x),
+                                                        vals=vals.Numbers(min_value=0, max_value=100)
+                                                        )
+        self.vti_heater_setpoint: Parameter = self.add_parameter('vti_heater_setpoint',
+                                                                 label='Heater Percentage Setpoint',
+                                                                 docstring='Percentage setpoint for the heater',
+                                                                 get_cmd='READ:' + self.vti_temp_addr + ':LOOP:HSET?',
+                                                                 get_parser=self._float_parser_nounits,
+                                                                 set_cmd=lambda x: self.ask(
+                                                                     'SET:' + self.vti_temp_addr + f':LOOP:HSET:{x}')
+                                                                 )
 
-        self.add_parameter('pressure',
-                           label='pressure',
-                           unit='mbar',
-                           get_cmd="READ:" + self.pressure_addr + ":SIG:PRES?",
-                           get_parser=self._pressure_parser,
-                           set_cmd=lambda x: self.pressure_setpoint(x)
-                           )
-        self.add_parameter('pressure_setpoint',
-                           label='pressure_setpoint',
-                           unit='mB',
-                           docstring='pressure set point for the VTI needle valve',
-                           get_cmd="READ:" + self.pres_loop_addr + ":LOOP:TSET?",
-                           get_parser=self._pressure_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.pres_loop_addr + f':LOOP:TSET:{x}'),
-                           vals=vals.Numbers(min_value=1, max_value=20)
-                           )
+        self.pressure: Parameter = self.add_parameter('pressure',
+                                                      label='pressure',
+                                                      unit='mbar',
+                                                      get_cmd="READ:" + self.pressure_addr + ":SIG:PRES?",
+                                                      get_parser=self._pressure_parser,
+                                                      set_cmd=lambda x: self.pressure_setpoint(x)
+                                                      )
+        self.pressure_setpoint: Parameter = self.add_parameter('pressure_setpoint',
+                                                               label='pressure_setpoint',
+                                                               unit='mB',
+                                                               docstring='pressure set point for the VTI needle valve',
+                                                               get_cmd="READ:" + self.pres_loop_addr + ":LOOP:TSET?",
+                                                               get_parser=self._pressure_parser,
+                                                               set_cmd=lambda x: self.ask(
+                                                                   'SET:' + self.pres_loop_addr + f':LOOP:TSET:{x}'),
+                                                               vals=vals.Numbers(min_value=1, max_value=20)
+                                                               )
 
-        self.add_parameter('gas_flow',
-                           label='Gas flow in percent',
-                           get_cmd='READ:' + self.needle_valve_addr + ':SIG:PERC?',
-                           get_parser=self._perc_parser,
-                           set_cmd=lambda x: self.gas_flow_setpoint(x)
-                           )
-        self.add_parameter('gas_flow_setpoint',
-                           label='Gas flow setpoint in percent',
-                           get_cmd='READ:' + self.pressure_addr + ':LOOP:FSET?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.pressure_addr + f':LOOP:FSET:' + str(x)),
-                           vals=vals.Numbers(min_value=0, max_value=100)
-                           )
+        self.gas_flow: Parameter = self.add_parameter('gas_flow',
+                                                      label='Gas flow in percent',
+                                                      get_cmd='READ:' + self.needle_valve_addr + ':SIG:PERC?',
+                                                      get_parser=self._perc_parser,
+                                                      set_cmd=lambda x: self.gas_flow_setpoint(x)
+                                                      )
+        self.gas_flow_setpoint: Parameter = self.add_parameter('gas_flow_setpoint',
+                                                               label='Gas flow setpoint in percent',
+                                                               get_cmd='READ:' + self.pressure_addr + ':LOOP:FSET?',
+                                                               get_parser=self._float_parser_nounits,
+                                                               set_cmd=lambda x: self.ask(
+                                                                   'SET:' + self.pressure_addr + f':LOOP:FSET:' + str(
+                                                                       x)),
+                                                               vals=vals.Numbers(min_value=0, max_value=100)
+                                                               )
 
-        self.add_parameter('temp_loop_P',
-                           label='loop P',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:P?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + f':LOOP:P:{x}'),
-                           )
-        self.add_parameter('temp_loop_I',
-                           label='loop I',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:I?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + f':LOOP:I:{x}'),
-                           )
-        self.add_parameter('temp_loop_D',
-                           label='loop D',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:D?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + f':LOOP:D:{x}'),
-                           )
-        self.add_parameter('temp_PID_control',
-                           label='PID controlled mode',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:ENAB?',
-                           get_parser=self._str_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + ':LOOP:ENAB:' + str(x))
-                           )
-        self.add_parameter('temp_PID_fromtable',
-                           label='PID from table',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:PIDT?',
-                           get_parser=self._str_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + ':LOOP:PIDT:' + str(x))
-                           )
-        self.add_parameter('probe_temp_ramp_mode',
-                           label='Probe Temperature Ramp Mode',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:RENA?',
-                           get_parser=self._str_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + ':LOOP:RENA:' + str(x))
-                           )
-        self.add_parameter('probe_ramp_rate',
-                           label='Probe Temperature Ramp Rate in K/min',
-                           unit='K/min',
-                           docstring='Temperature setpoint for the heater',
-                           get_cmd='READ:' + self.probe_temp_addr + ':LOOP:RSET?',
-                           get_parser=self._rate_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.probe_temp_addr + f':LOOP:RSET:{x}')
-                           )
+        self.temp_loop_P: Parameter = self.add_parameter('temp_loop_P',
+                                                         label='loop P',
+                                                         get_cmd='READ:' + self.probe_temp_addr + ':LOOP:P?',
+                                                         get_parser=self._float_parser_nounits,
+                                                         set_cmd=lambda x: self.ask(
+                                                             'SET:' + self.probe_temp_addr + f':LOOP:P:{x}'),
+                                                         )
+        self.temp_loop_I: Parameter = self.add_parameter('temp_loop_I',
+                                                         label='loop I',
+                                                         get_cmd='READ:' + self.probe_temp_addr + ':LOOP:I?',
+                                                         get_parser=self._float_parser_nounits,
+                                                         set_cmd=lambda x: self.ask(
+                                                             'SET:' + self.probe_temp_addr + f':LOOP:I:{x}'),
+                                                         )
+        self.temp_loop_D: Parameter = self.add_parameter('temp_loop_D',
+                                                         label='loop D',
+                                                         get_cmd='READ:' + self.probe_temp_addr + ':LOOP:D?',
+                                                         get_parser=self._float_parser_nounits,
+                                                         set_cmd=lambda x: self.ask(
+                                                             'SET:' + self.probe_temp_addr + f':LOOP:D:{x}'),
+                                                         )
+        self.temp_PID_control: Parameter = self.add_parameter('temp_PID_control',
+                                                              label='PID controlled mode',
+                                                              get_cmd='READ:' + self.probe_temp_addr + ':LOOP:ENAB?',
+                                                              get_parser=self._str_parser,
+                                                              set_cmd=lambda x: self.ask(
+                                                                  'SET:' + self.probe_temp_addr + ':LOOP:ENAB:' + str(
+                                                                      x))
+                                                              )
+        self.temp_PID_fromtable: Parameter = self.add_parameter('temp_PID_fromtable',
+                                                                label='PID from table',
+                                                                get_cmd='READ:' + self.probe_temp_addr + ':LOOP:PIDT?',
+                                                                get_parser=self._str_parser,
+                                                                set_cmd=lambda x: self.ask(
+                                                                    'SET:' + self.probe_temp_addr + ':LOOP:PIDT:' + str(
+                                                                        x))
+                                                                )
+        self.probe_temp_ramp_mode: Parameter = self.add_parameter('probe_temp_ramp_mode',
+                                                                  label='Probe Temperature Ramp Mode',
+                                                                  get_cmd='READ:' + self.probe_temp_addr + ':LOOP:RENA?',
+                                                                  get_parser=self._str_parser,
+                                                                  set_cmd=lambda x: self.ask(
+                                                                      'SET:' + self.probe_temp_addr + ':LOOP:RENA:' + str(
+                                                                          x))
+                                                                  )
+        self.probe_ramp_rate: Parameter = self.add_parameter('probe_ramp_rate',
+                                                             label='Probe Temperature Ramp Rate in K/min',
+                                                             unit='K/min',
+                                                             docstring='Temperature setpoint for the heater',
+                                                             get_cmd='READ:' + self.probe_temp_addr + ':LOOP:RSET?',
+                                                             get_parser=self._rate_parser,
+                                                             set_cmd=lambda x: self.ask(
+                                                                 'SET:' + self.probe_temp_addr + f':LOOP:RSET:{x}')
+                                                             )
 
-        self.add_parameter('vti_temp_loop_P',
-                           label='vti loop P',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:P?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + f':LOOP:P:{x}'),
-                           )
-        self.add_parameter('vti_temp_loop_I',
-                           label='loop I',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:I?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + f':LOOP:I:{x}'),
-                           )
-        self.add_parameter('vti_temp_loop_D',
-                           label='loop D',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:D?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + f':LOOP:D:{x}'),
-                           )
-        self.add_parameter('vti_temp_PID_control',
-                           label='VTI PID controlled mode',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:ENAB?',
-                           get_parser=self._str_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + ':LOOP:ENAB:' + str(x))
-                           )
-        self.add_parameter('vti_temp_PID_fromtable',
-                           label='VTI PID from table',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:PIDT?',
-                           get_parser=self._str_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + ':LOOP:PIDT:' + str(x))
-                           )
-        self.add_parameter('vti_temp_ramp_mode',
-                           label='VTI Temperature Ramp Mode',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:RENA?',
-                           get_parser=self._str_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + ':LOOP:RENA:' + str(x))
-                           )
-        self.add_parameter('vti_ramp_rate',
-                           label='VTI Temperature Ramp Rate in K/min',
-                           unit='K/min',
-                           docstring='VTI temperature setpoint for the VTI heater',
-                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:RSET?',
-                           get_parser=self._rate_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.vti_temp_addr + f':LOOP:RSET:{x}')
-                           )
+        self.vti_temp_loop_P: Parameter = self.add_parameter('vti_temp_loop_P',
+                                                             label='vti loop P',
+                                                             get_cmd='READ:' + self.vti_temp_addr + ':LOOP:P?',
+                                                             get_parser=self._float_parser_nounits,
+                                                             set_cmd=lambda x: self.ask(
+                                                                 'SET:' + self.vti_temp_addr + f':LOOP:P:{x}'),
+                                                             )
+        self.vti_temp_loop_I: Parameter = self.add_parameter('vti_temp_loop_I',
+                                                             label='loop I',
+                                                             get_cmd='READ:' + self.vti_temp_addr + ':LOOP:I?',
+                                                             get_parser=self._float_parser_nounits,
+                                                             set_cmd=lambda x: self.ask(
+                                                                 'SET:' + self.vti_temp_addr + f':LOOP:I:{x}'),
+                                                             )
+        self.vti_temp_loop_D: Parameter = self.add_parameter('vti_temp_loop_D',
+                                                             label='loop D',
+                                                             get_cmd='READ:' + self.vti_temp_addr + ':LOOP:D?',
+                                                             get_parser=self._float_parser_nounits,
+                                                             set_cmd=lambda x: self.ask(
+                                                                 'SET:' + self.vti_temp_addr + f':LOOP:D:{x}'),
+                                                             )
+        self.vti_temp_PID_control: Parameter = self.add_parameter('vti_temp_PID_control',
+                                                                  label='VTI PID controlled mode',
+                                                                  get_cmd='READ:' + self.vti_temp_addr + ':LOOP:ENAB?',
+                                                                  get_parser=self._str_parser,
+                                                                  set_cmd=lambda x: self.ask(
+                                                                      'SET:' + self.vti_temp_addr + ':LOOP:ENAB:' + str(
+                                                                          x))
+                                                                  )
+        self.vti_temp_PID_fromtable: Parameter = self.add_parameter('vti_temp_PID_fromtable',
+                                                                    label='VTI PID from table',
+                                                                    get_cmd='READ:' + self.vti_temp_addr + ':LOOP:PIDT?',
+                                                                    get_parser=self._str_parser,
+                                                                    set_cmd=lambda x: self.ask(
+                                                                        'SET:' + self.vti_temp_addr + ':LOOP:PIDT:' + str(
+                                                                            x))
+                                                                    )
+        self.vti_temp_ramp_mode: Parameter = self.add_parameter('vti_temp_ramp_mode',
+                                                                label='VTI Temperature Ramp Mode',
+                                                                get_cmd='READ:' + self.vti_temp_addr + ':LOOP:RENA?',
+                                                                get_parser=self._str_parser,
+                                                                set_cmd=lambda x: self.ask(
+                                                                    'SET:' + self.vti_temp_addr + ':LOOP:RENA:' + str(
+                                                                        x))
+                                                                )
+        self.vti_ramp_rate: Parameter = self.add_parameter('vti_ramp_rate',
+                                                           label='VTI Temperature Ramp Rate in K/min',
+                                                           unit='K/min',
+                                                           docstring='VTI temperature setpoint for the VTI heater',
+                                                           get_cmd='READ:' + self.vti_temp_addr + ':LOOP:RSET?',
+                                                           get_parser=self._rate_parser,
+                                                           set_cmd=lambda x: self.ask(
+                                                               'SET:' + self.vti_temp_addr + f':LOOP:RSET:{x}')
+                                                           )
 
-        self.add_parameter('pres_loop_P',
-                           label='pressure loop P',
-                           get_cmd='READ:' + self.pressure_addr + ':LOOP:P?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.pressure_addr + f':LOOP:P:{x}'),
-                           )
-        self.add_parameter('pres_loop_I',
-                           label='pressure loop I',
-                           get_cmd='READ:' + self.pressure_addr + ':LOOP:I?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.pressure_addr + f':LOOP:I:{x}'),
-                           )
-        self.add_parameter('pres_loop_D',
-                           label='pressure loop D',
-                           get_cmd='READ:' + self.pressure_addr + ':LOOP:D?',
-                           get_parser=self._float_parser_nounits,
-                           set_cmd=lambda x: self.ask('SET:' + self.pressure_addr + f':LOOP:D:{x}'),
-                           )
-        self.add_parameter('pres_PID_control',
-                           label='PID controlled mode',
-                           get_cmd='READ:' + self.pressure_addr + ':LOOP:ENAB?',
-                           get_parser=self._str_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.pressure_addr + ':LOOP:ENAB:' + str(x))
-                           )
-        self.add_parameter('pres_PID_fromtable',
-                           label='PID from table',
-                           get_cmd='READ:' + self.pressure_addr + ':LOOP:PIDT?',
-                           get_parser=self._str_parser,
-                           set_cmd=lambda x: self.ask('SET:' + self.pressure_addr + ':LOOP:PIDT:' + str(x))
-                           )
+        self.pres_loop_P: Parameter = self.add_parameter('pres_loop_P',
+                                                         label='pressure loop P',
+                                                         get_cmd='READ:' + self.pressure_addr + ':LOOP:P?',
+                                                         get_parser=self._float_parser_nounits,
+                                                         set_cmd=lambda x: self.ask(
+                                                             'SET:' + self.pressure_addr + f':LOOP:P:{x}'),
+                                                         )
+        self.pres_loop_I: Parameter = self.add_parameter('pres_loop_I',
+                                                         label='pressure loop I',
+                                                         get_cmd='READ:' + self.pressure_addr + ':LOOP:I?',
+                                                         get_parser=self._float_parser_nounits,
+                                                         set_cmd=lambda x: self.ask(
+                                                             'SET:' + self.pressure_addr + f':LOOP:I:{x}'),
+                                                         )
+        self.pres_loop_D: Parameter = self.add_parameter('pres_loop_D',
+                                                         label='pressure loop D',
+                                                         get_cmd='READ:' + self.pressure_addr + ':LOOP:D?',
+                                                         get_parser=self._float_parser_nounits,
+                                                         set_cmd=lambda x: self.ask(
+                                                             'SET:' + self.pressure_addr + f':LOOP:D:{x}'),
+                                                         )
+        self.pres_PID_control: Parameter = self.add_parameter('pres_PID_control',
+                                                              label='PID controlled mode',
+                                                              get_cmd='READ:' + self.pressure_addr + ':LOOP:ENAB?',
+                                                              get_parser=self._str_parser,
+                                                              set_cmd=lambda x: self.ask(
+                                                                  'SET:' + self.pressure_addr + ':LOOP:ENAB:' + str(x))
+                                                              )
+        self.pres_PID_fromtable: Parameter = self.add_parameter('pres_PID_fromtable',
+                                                                label='PID from table',
+                                                                get_cmd='READ:' + self.pressure_addr + ':LOOP:PIDT?',
+                                                                get_parser=self._str_parser,
+                                                                set_cmd=lambda x: self.ask(
+                                                                    'SET:' + self.pressure_addr + ':LOOP:PIDT:' + str(
+                                                                        x))
+                                                                )
 
         self.connect_message()
 

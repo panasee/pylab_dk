@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import time
 from functools import partial
-from typing import Any, TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import numpy.typing as npt
