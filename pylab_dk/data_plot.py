@@ -308,7 +308,7 @@ class DataPlot(DataProcess):
                 plot_path = self.get_filepath(measure_mods, *var_tuple, plot=True)
                 data_path = self.get_filepath(measure_mods, *var_tuple)
                 try:
-                    data_df = pd.read_csv(data_path, sep=r",|\s+", index_col=False)
+                    data_df = pd.read_csv(data_path, sep=r",", index_col=False)
                 except Exception:
                     print("no data found")
                     return None
@@ -504,10 +504,11 @@ class DataPlot(DataProcess):
             self._thread = None
 
     def live_plot_update(self, row: int | tuple[int], col: int | tuple[int], lineno: int | tuple[int],
-                         x_data: Sequence[float] | Sequence[Sequence[float]] | np.ndarray[float],
-                         y_data: Sequence[float] | Sequence[Sequence[float]] | np.ndarray[float],
-                         z_data: Sequence[float] | Sequence[Sequence[float]] | np.ndarray[float] = (0,),
-                         *, incremental=False, max_points: int = None) -> None:
+                         x_data: Sequence[float | str] | Sequence[Sequence[float | str]] | np.ndarray[float | str],
+                         y_data: Sequence[float | str] | Sequence[Sequence[float | str]] | np.ndarray[float | str],
+                         z_data: Sequence[float | str] | Sequence[Sequence[float | str]] | np.ndarray[float | str] = (
+                         0,), *,
+                         incremental=False, max_points: int = None, with_str: bool = False) -> None:
         """
         update the live data in jupyter, the row, col, lineno all can be tuples to update multiple subplots at the
         same time. Note that this function is not appending datapoints, but replot the whole line, so provide the
@@ -526,6 +527,8 @@ class DataPlot(DataProcess):
         - z_data: the array-like z data (for contour plot only, be the same length as no of contour plots)
         - incremental: whether to update the data incrementally
         - max_points: the maximum number of points to be plotted, if None, no limit, only affect incremental line plots
+        - with_str: whether there are strings (mainly for time string) in data. There will be no order for string data,
+                   the string data will just be plotted evenly spaced
         """
         if not incremental and max_points is not None:
             print("max_points will be ignored when incremental is False")
@@ -536,19 +539,23 @@ class DataPlot(DataProcess):
             else:
                 return np.array([data])
 
-        def ensure_2d_array(data) -> np.ndarray:
+        def ensure_2d_array(data, if_with_str=False) -> np.ndarray:
             data_arr = ensure_list(data)
             if not isinstance(data_arr[0], np.ndarray):
+                if if_with_str:
+                    return np.array([data_arr])
                 return np.array([data_arr], dtype=np.float32)
             else:
+                if if_with_str:
+                    return np.array(data_arr)
                 return np.array(data_arr, dtype=np.float32)
 
         row = ensure_list(row)
         col = ensure_list(col)
         lineno = ensure_list(lineno)
-        x_data = ensure_2d_array(x_data)
-        y_data = ensure_2d_array(y_data)
-        z_data = ensure_2d_array(z_data)
+        x_data = ensure_2d_array(x_data, with_str)
+        y_data = ensure_2d_array(y_data, with_str)
+        z_data = ensure_2d_array(z_data, with_str)
 
         #dim_tolift = [0, 0, 0]
         with (self.go_f.batch_update()):
@@ -558,9 +565,9 @@ class DataPlot(DataProcess):
                 trace = self.live_dfs[irow][icol][ilineno]
                 if plot_type == 'scatter':
                     if incremental:
-                        trace.x = np.append(trace.x, x_data[no])[-max_points:] if max_points is not None\
+                        trace.x = np.append(trace.x, x_data[no])[-max_points:] if max_points is not None \
                             else np.append(trace.x, x_data[no])
-                        trace.y = np.append(trace.y, y_data[no])[-max_points:] if max_points is not None\
+                        trace.y = np.append(trace.y, y_data[no])[-max_points:] if max_points is not None \
                             else np.append(trace.y, y_data[no])
                     else:
                         trace.x = x_data[no]

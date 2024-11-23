@@ -188,7 +188,7 @@ def time_generator(format_str: str = "%Y-%m-%d_%H:%M:%S"):
         format_str (str): the format of the time
     """
     while True:
-        yield datetime.now().strftime(format_str)
+        yield datetime.now().isoformat(sep="_", timespec="milliseconds")
 
 
 def combined_generator_list(lst_gens: list[Generator]):

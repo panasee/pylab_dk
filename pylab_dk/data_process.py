@@ -33,10 +33,10 @@ class DataProcess(FileOrganizer):
         filepath = self.get_filepath(measurename_all, *var_tuple, tmpfolder=tmpfolder)
         measurename_main, _ = FileOrganizer.measurename_decom(measurename_all)
         if not cached:
-            self.dfs[measurename_main] = pd.read_csv(filepath, sep=r'\s+|,', skiprows=skiprows, header=header)
+            self.dfs[measurename_main] = pd.read_csv(filepath, sep=r',', skiprows=skiprows, header=header)
             return self.dfs[measurename_main].copy()
         else:
-            self.dfs["cache"] = pd.read_csv(filepath, sep=r'\s+|,', skiprows=skiprows, header=header)
+            self.dfs["cache"] = pd.read_csv(filepath, sep=r',', skiprows=skiprows, header=header)
             return self.dfs["cache"].copy()
 
     def rename_columns(self, measurename_main: str, columns_name: dict) -> None:
