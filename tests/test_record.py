@@ -1,18 +1,23 @@
 #!/usr/bin/env python
 import os
+import time
+
 import pandas as pd
+import datetime
+os.environ["PYLAB_DB_LOCAL"] = r""
+os.environ["PYLAB_DB_OUT"] = r""
 # make sure environment variables are set before importing pylab_dk
 # MeasureManager module will need the NIDAQmx module to work,
 from pylab_dk.measure_manager import MeasureManager
 
-project_name = "Date-Material" # Name used only for test
+project_name = "Date-Material"  # Name used only for test
 measurement = MeasureManager(project_name)
 
 #=======test initialization of record=======
-filepath, col_no, df_record = measurement.record_init(
-                                        ("V_source_sweep_ac","V_source_sweep_ac","V_sense","V_sense","T_vary"),
-                                        1, 1E-2, 13.221, 1,1,1,1E-2,123.21,1,1,"",1,1,"",1,1,300,5,
-                                        return_df=True)
+filepath, col_no, df_record, _ = measurement.record_init(
+    ("V_source_sweep_ac", "V_source_sweep_ac", "V_sense", "V_sense", "T_vary"),
+    1, 1E-2, 13.221, 1, 1, 1, 1E-2, 123.21, 1, 1, "", 1, 1, "", 1, 1, 300, 5,
+    return_df=True)
 
 print(f"filepath: {filepath}")
 print(f"no of columns(with time column): {col_no}")
@@ -26,8 +31,8 @@ print(f"dataframe: {df_record}")
 # Index: []
 
 #========test record update and force_write=======
-measurement.record_update(filepath, col_no, [1]*(col_no-1), force_write=True)
-print(pd.read_csv(filepath, sep="\t|,"))
+measurement.record_update(filepath, col_no, [datetime.datetime.now().isoformat(sep="_", timespec="milliseconds")] + [1] * (col_no - 1), force_write=True)
+print(pd.read_csv(filepath, sep=","))
 
 # Expected output:
 #                time  V_source  V_source2  X  Y  R  Theta  X2  Y2  R2  Theta2  T
@@ -35,9 +40,10 @@ print(pd.read_csv(filepath, sep="\t|,"))
 #(first 0 is the default index column)
 
 #========test record auto write=======
-for i in range(7):# the auto write period is 7
-    measurement.record_update(filepath, col_no, [i]*(col_no-1))
-print(pd.read_csv(filepath, sep="\t|,"))
+for i in range(7):  # the auto write period is 7
+    measurement.record_update(filepath, col_no, [datetime.datetime.now().isoformat(sep="_", timespec="milliseconds")] + [i] * (col_no - 1))
+    time.sleep(0.1)
+print(pd.read_csv(filepath, sep=","))
 
 # Expected output:
 #                time  V_source  V_source2  X  Y  R  Theta  X2  Y2  R2  Theta2  T

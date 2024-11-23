@@ -208,17 +208,18 @@ class FileOrganizer:
         mods_detail_dicts_lst = [{"sweep_fix": None, "ac_dc": None, "source_sense": None} for i in range(len(params))]
         for i, var in enumerate(params):
             var_list = re.split(r"[_-]", var)
-            if len(var_list) == 2:
-                var_main, var_sub = var_list
-                namestr = FileOrganizer.measure_types_json[f'{var_main}'][f"{var_sub}"]
-            elif len(var_list) == 4:
-                var_main, var_sub, var_sweep, var_ac_dc = var_list
-                namestr = FileOrganizer.measure_types_json[f'{var_main}'][f"{var_sub}"][f"{var_sweep}"][f"{var_ac_dc}"]
-            elif len(var_list) == 3:
-                var_main, var_sub, var_ac_dc = var_list
-                namestr = FileOrganizer.measure_types_json[f'{var_main}'][f"{var_sub}"][f"{var_ac_dc}"]
-            else:
-                raise ValueError("The variable name is not in the correct format, please check if the separator is _")
+            match len(var_list):
+                case 2:
+                    var_main, var_sub = var_list
+                    namestr = FileOrganizer.measure_types_json[f'{var_main}'][f"{var_sub}"]
+                case 3:
+                    var_main, var_sub, var_ac_dc = var_list
+                    namestr = FileOrganizer.measure_types_json[f'{var_main}'][f"{var_sub}"][f"{var_ac_dc}"]
+                case 4:
+                    var_main, var_sub, var_sweep, var_ac_dc = var_list
+                    namestr = FileOrganizer.measure_types_json[f'{var_main}'][f"{var_sub}"][f"{var_sweep}"][f"{var_ac_dc}"]
+                case _:
+                    raise ValueError("The variable name is not in the correct format, please check if the separator is _")
 
             if var_sub == "source":
                 source_dict["mainname"].append(var_main)

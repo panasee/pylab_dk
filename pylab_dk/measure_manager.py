@@ -6,23 +6,19 @@ possibilities of parameter changing"""
 import copy
 from itertools import product
 from typing import Literal, Generator, Optional, Sequence
-import time
-import datetime
 import gc
 import numpy as np
 import pyvisa
 import pandas as pd
 from pathlib import Path
 import re
-# import qcodes as qc
-from pylab_dk.drivers.MercuryiPS_VISA import OxfordMercuryiPS
 from pylab_dk.drivers.probe_rotator import RotatorProbe
 from pylab_dk.file_organizer import print_help_if_needed, FileOrganizer
 from pylab_dk.data_plot import DataPlot
 from pylab_dk.constants import convert_unit, print_progress_bar, gen_seq, constant_generator, \
     combined_generator_list, rename_duplicates, time_generator
 from pylab_dk.equip_wrapper import ITCs, ITCMercury, WrapperSR830, Wrapper2400, Wrapper6430, Wrapper2182, \
-    Wrapper6221, Meter, SourceMeter
+    Wrapper6221, Meter, SourceMeter, WrapperIPS
 
 
 class MeasureManager(DataPlot):
@@ -41,7 +37,7 @@ class MeasureManager(DataPlot):
             "6221": Wrapper6221,
             "sr830": WrapperSR830
         }
-        self.instrs: dict[str, list[Meter] | ITCs | OxfordMercuryiPS | ITCMercury | RotatorProbe] = {}
+        self.instrs: dict[str, list[Meter] | ITCs | WrapperIPS | RotatorProbe] = {}
         # load params for plotting in measurement
         DataPlot.load_settings(False, False)
 
@@ -52,7 +48,8 @@ class MeasureManager(DataPlot):
         """
         return self._out_database_dir_proj
 
-    def load_meter(self, meter_no: Literal["sr830", "6221", "2182", "2182a", "2400", "2401", "6430"], *address: str) -> None:
+    def load_meter(self, meter_no: Literal["sr830", "6221", "2182", "2182a", "2400", "2401", "6430"],
+                   *address: str) -> None:
         """
         load the instrument according to the address, store it in self.instrs[meter]
 
@@ -70,7 +67,10 @@ class MeasureManager(DataPlot):
         self.instrs[meter_no] = []
         for addr in address:
             self.instrs[meter_no].append(self.meter_wrapper_dict[meter_no](addr))
-            self.instrs[meter_no][-1].setup()
+            try:
+                self.instrs[meter_no][-1].setup(function="source")
+            except:
+                self.instrs[meter_no][-1].setup(function="sense")
 
     def load_rotator(self) -> None:
         """
@@ -102,79 +102,7 @@ class MeasureManager(DataPlot):
             if_print (bool): whether to print the snapshot of the instrument
             limit_sphere (float): the limit of the field
         """
-        self.instrs["ips"] = OxfordMercuryiPS("mips", address)
-        if if_print:
-            self.instrs["ips"].print_readable_snapshot(update=True)
-
-        def spherical_limit(x, y, z) -> bool:
-            return np.sqrt(x ** 2 + y ** 2 + z ** 2) <= limit_sphere
-
-        self.instrs["ips"].set_new_field_limits(spherical_limit)
-
-    def ramp_magfield(self, field: float | int | tuple[float] | list[float], *,
-                      rate: tuple[float] = (0.00333,) * 3, wait: bool = True,
-                      tolerance: float = 3e-3, if_plot: bool = False) -> None:
-        """
-        ramp the magnetic field to the target value with the rate, current the field is only in Z direction limited by the actual instrument setting
-        (currently only B_z can be ramped)
-
-        Args:
-            field (tuple[float]): the target field coor
-            rate (float): the rate of the field change (T/s)
-            wait (bool): whether to wait for the ramping to finish
-            tolerance (float): the tolerance of the field (T)
-            if_plot (bool): whether to plot the field during the ramping
-        """
-        assert isinstance(field, (float, int, tuple, list)), "The field should be a float or a tuple of 3 floats"
-
-        mips = self.instrs["ips"]
-        # skip ramping if the field is already at the target value
-        # only consider z component temporarily
-        fieldz_before = mips.z_measured()
-        fieldz_target = field if isinstance(field, (float, int)) else field[2]
-        if abs(fieldz_target - fieldz_before) < tolerance:
-            return
-
-        if max(rate) * 60 > 0.2:
-            raise ValueError("The rate is too high, the maximum rate is 0.2 T/min")
-        #mips.GRPX.field_ramp_rate(rate[0])
-        #mips.GRPY.field_ramp_rate(rate[1])
-        mips.GRPZ.field_ramp_rate(rate[2])
-        # no x and y field for now
-        #mips.x_target(field[0])
-        #mips.y_target(field[1])
-        if isinstance(field, (tuple, list)):
-            mips.z_target(field[2])
-        if isinstance(field, (float, int)):
-            mips.z_target(field)
-
-        mips.ramp(mode="simul")
-        if wait:
-            # the is_ramping() method is not working properly, so we use the following method to wait for the ramping
-            # to finish
-            if if_plot:
-                self.live_plot_init(1, 1, 1, 600, 1400, titles=[["H ramping"]],
-                                    axes_labels=[[[r"Time (s)", r"Field_norm (T)"]]])
-            time_arr = [0]
-            field_arr = [np.linalg.norm((mips.x_measured(), mips.y_measured(), mips.z_measured()))]
-            count = 0
-            step_count = 1
-            stability_counter = 13  # [s]
-            while count < stability_counter:
-                field_now = (mips.x_measured(), mips.y_measured(), mips.z_measured())
-                time_arr.append(step_count)
-                field_arr.append(np.linalg.norm(field_now))
-                if abs(np.linalg.norm(field_now) - np.linalg.norm(field)) < tolerance:
-                    count += 1
-                else:
-                    count = 0
-                print_progress_bar(count, stability_counter, prefix="Stablizing",
-                                   suffix=f"B: {field_now} T")
-                time.sleep(1)
-                if if_plot:
-                    self.live_plot_update(0, 0, 0, time_arr, field_arr)
-                step_count += 1
-            print("ramping finished")
+        self.instrs["ips"] = WrapperIPS(address, if_print=if_print, limit_sphere=limit_sphere)
 
     def load_mercury_itc(self, address: str = "TCPIP0::10.101.28.24::7020::SOCKET") -> None:
         """
@@ -230,7 +158,7 @@ class MeasureManager(DataPlot):
         print(f"Compliance: {compliance} {'V' if source_type == 'curr' else 'A'}")
         print(f"Freq: {freq} Hz")
         print(f"Sweep Mode: {sweepmode}")
-        instr.setup()
+        instr.setup(function="source")
         safe_step: dict | float = instr.safe_step
         if isinstance(safe_step, dict):
             safe_step: float = safe_step[source_type]
@@ -320,14 +248,14 @@ class MeasureManager(DataPlot):
             if ext_type == "temp":
                 instr.ramp_to_temperature(value_i, wait=True)
             elif ext_type == "mag":
-                self.ramp_magfield(value_i, wait=True)
+                instr.ramp_to_field(value_i, wait=True)
             elif ext_type == "angle":
                 instr.ramp_angle(value_i)
             yield value_i
 
     def sense_apply(self, sense_type: Literal["volt", "curr", "temp", "mag", "V", "I", "T", "B", "H", "angle", "Theta"],
                     meter: str | Meter = None, *, if_during_vary=False) \
-            -> Generator[float | tuple[float], None, None]:
+            -> Generator[float, None, None]:
         """
         sense the current using the source meter, initializations will be done for volt/curr meters
 
@@ -346,7 +274,7 @@ class MeasureManager(DataPlot):
         if sense_type in ["volt", "curr"] and meter is not None:
             instr = self.extract_meter_info(meter)
             print(f"Sense Meter/Instr: {instr.meter}")
-            instr.setup()
+            instr.setup(function="sense")
             while True:
                 yield instr.sense(type_str=sense_type)
         elif sense_type == "temp":
@@ -368,18 +296,16 @@ class MeasureManager(DataPlot):
             print(f"Sense Meter/Instr: {instr}")
             if not if_during_vary:
                 while True:
-                    yield np.linalg.norm((instr.x_measured(), instr.y_measured(), instr.z_measured()))
+                    yield instr.field
             else:
                 timer_i = 0
                 while timer_i < 20:
                     # only z field is considered
-                    if abs(np.linalg.norm(
-                            (instr.x_measured(), instr.y_measured(), instr.z_measured())) - np.linalg.norm(
-                            instr.z_target())) < 0.01:
+                    if abs(instr.field - instr.field_set) < 0.01:
                         timer_i += 1
                     else:
                         timer_i = 0
-                    yield np.linalg.norm((instr.x_measured(), instr.y_measured(), instr.z_measured()))
+                    yield instr.field
         elif sense_type == "angle":
             instr = self.instrs["rotator"]
             print(f"Sense Meter/Instr: {instr}")
@@ -495,6 +421,7 @@ class MeasureManager(DataPlot):
             do manual Cartesian product using itertools.product(gen1,gen2) -> (gen1.1,gen2.all), (gen1.2,gen2.all)...
         3. about the varying of T/B, they will be ramped to the start value first, and then the start_vary functions
             will be returned, call the function to start the varying; and the generator for varying is a sense_apply
+        4. no need to appoint sense for ext modules, they will be automatically sensed as long as the module is included
 
         sweep mode: for I,V: "0-max-0", "0--max-max-0", "manual"
         sweep mode: for T,B: "0-max-0", "0--max-max-0", "min-max", "manual"
@@ -502,11 +429,12 @@ class MeasureManager(DataPlot):
         Args:
             measure_mods (tuple[str]): the modules of measurement
             var_tuple (tuple): the variables of the measurement, use "-h" to see the variables' list
-            wrapper_lst (list[Meter]): the list of the wrappers to be used
+            wrapper_lst (list[Meter]): the list of the wrappers to be used (only for source and sense)
             compliance_lst (list[float]): the list of the compliance to be used (sources)
             sr830_current_resistor (float): the resistance of the resistor, used only for sr830 curr source
             if_combine_gen (bool): whether to combine the generators as a whole list generator,
                                 if False, return the list of generators for further operations
+                                (useful for combination of VARY and SWEEP)
             sweep_tables (list[list[float | str, ...]]): the list of the sweep tables for manual sweep,
                                 the table will be fetched and used according to the order from left to right(0->1->2...)
             special_name (str): the special name used for subfolder to avoid mixing under the same measurement name
@@ -516,7 +444,9 @@ class MeasureManager(DataPlot):
             dict: a dictionary containing the list of generators, dataframe csv filepath and record number
                 keys: "gen_lst"(combined list generator), "swp_idx" (indexes for sweeping generator, not including vary),
                 "file_path"(csv file), "record_num"(num of record data columns, without time),
-                "tmp_vary", "mag_vary" (the function used to begin the varying of T/B, no parameters needed, e.g. start magnetic field varying by calling mag_vary())
+                "tmp_vary", "mag_vary", "angle_vary" (the function used to begin the varying of T/B/Theta,
+                    e.g. start magnetic field varying by calling mag_vary(),
+                    add reverse=True to reverse the varying direction, used to do circular varying)
         """
         src_lst, sense_lst, oth_lst = self.extract_info_mods(measure_mods, *var_tuple)
         assert len(src_lst) + len(sense_lst) == len(wrapper_lst), "The number of modules and meters should be the same"
@@ -566,7 +496,7 @@ class MeasureManager(DataPlot):
                 if oth_mod["name"] == "T":
                     self.instrs["itc"].ramp_to_temperature(oth_mod["fix"], wait=True)
                 elif oth_mod["name"] == "B":
-                    self.ramp_magfield(oth_mod["fix"], wait=True)
+                    self.instrs["ips"].ramp_to_field(oth_mod["fix"], wait=True)
                 elif oth_mod["name"] == "Theta":
                     self.instrs["rotator"].ramp_angle(oth_mod["fix"], wait=True)
                 rec_lst.append(self.sense_apply(oth_mod["name"]))
@@ -577,20 +507,32 @@ class MeasureManager(DataPlot):
 
                     # define a function instead of directly calling the ramp_to_temperature method
                     # to avoid possible interruption or delay
-                    def temp_vary():
-                        self.instrs["itc"].ramp_to_temperature(oth_mod["stop"], wait=False)
+                    def temp_vary(reverse: bool = False):
+                        target = oth_mod["start"] if reverse else oth_mod["stop"]
+                        ini = oth_mod["stop"] if reverse else oth_mod["start"]
+                        while abs(self.instrs["itc"].temperature - ini) > 0.1:
+                            self.instrs["itc"].ramp_to_temperature(ini, wait=True)
+                        self.instrs["itc"].ramp_to_temperature(target, wait=False)
                 elif oth_mod["name"] == "B":
                     vary_mod.append("B")
-                    self.ramp_magfield(oth_mod["start"], wait=True)
+                    self.instrs["ips"].ramp_to_field(oth_mod["start"], wait=True)
 
-                    def mag_vary():
-                        self.ramp_magfield(oth_mod["stop"], wait=False)
+                    def mag_vary(reverse: bool = False):
+                        target = oth_mod["start"] if reverse else oth_mod["stop"]
+                        ini = oth_mod["stop"] if reverse else oth_mod["start"]
+                        while abs(self.instrs["ips"].field - ini) > 0.01:
+                            self.instrs["ips"].ramp_to_field(ini, wait=True)
+                        self.instrs["ips"].ramp_to_field(target, wait=False)
                 elif oth_mod["name"] == "Theta":
                     vary_mod.append("Theta")
                     self.instrs["rotator"].ramp_angle(oth_mod["start"], wait=True)
 
-                    def angle_vary():
-                        self.instrs["rotator"].ramp_angle(oth_mod["stop"], wait=False)
+                    def angle_vary(reverse: bool = False):
+                        target = oth_mod["start"] if reverse else oth_mod["stop"]
+                        ini = oth_mod["stop"] if reverse else oth_mod["start"]
+                        while abs(self.instrs["rotator"].curr_angle() - ini) > 0.3:
+                            self.instrs["rotator"].ramp_angle(ini, wait=True)
+                        self.instrs["rotator"].ramp_angle(target, wait=False)
 
                 rec_lst.append(self.sense_apply(oth_mod["name"], if_during_vary=True))
             elif oth_mod["sweep_fix"] == "sweep":
@@ -610,12 +552,15 @@ class MeasureManager(DataPlot):
         else:
             total_gen = rec_lst
 
+        if with_timer:
+            sweep_idx = [i + 1 for i in sweep_idx]  # add 1 for the time column
         return {
             "gen_lst": total_gen,
             "swp_idx": sweep_idx,
             "file_path": file_path,
             "plot_record_path": record_plot_path,
             "record_num": record_num,
+            "vary_mod": vary_mod,
             "tmp_vary": None if "T" not in vary_mod else temp_vary,
             "mag_vary": None if "B" not in vary_mod else mag_vary,
             "angle_vary": None if "Theta" not in vary_mod else angle_vary

@@ -23,11 +23,11 @@ dependencies = [
     "kaleido==0.1.0.post1",
     "pyvisa",
     "pymeasure>=0.14.0",
-    "qcodes>=0.47.0"
+    "qcodes>=0.47.0",
+    "jupyter"
 ]
 
 [project.optional-dependencies]
-jupyter = ["jupyter"]
 gui = ["PyQt6"]
 
 [project.scripts]

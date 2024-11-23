@@ -209,6 +209,23 @@ def combined_generator_list(lst_gens: list[Generator]):
             break
 
 
+def next_lst_gen(lst_gens: list[Generator]):
+    """
+    get the next value of the generators in the list ONCE
+    """
+    try:
+        list_ini = [next(i) for i in lst_gens]
+        list_fin = []
+        for i in list_ini:
+            if isinstance(i, list | tuple):
+                list_fin.extend(i)
+            else:
+                list_fin.append(i)
+        return list_fin
+    except StopIteration:
+        return None
+
+
 def rename_duplicates(columns: list[str]) -> list[str]:
     """
     rename the duplicates with numbers (like ["V","V"] to ["V1","V2"])

@@ -30,7 +30,7 @@ Flow:
     shutdown()
 """
 import time
-from typing import Literal, Optional
+from typing import Literal, Optional, Tuple, Any
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -39,6 +39,8 @@ from pymeasure.instruments.oxfordinstruments import ITC503
 from pymeasure.instruments.keithley import Keithley6221, KeithleyDMM6500
 from pymeasure.instruments.keithley import Keithley2182
 from qcodes.instrument_drivers.Keithley import Keithley2400, Keithley2450
+
+from pylab_dk.drivers.MercuryiPS_VISA import OxfordMercuryiPS
 from pylab_dk.drivers.mercuryITC import MercuryITC
 from pylab_dk.drivers.Keithley_6430 import Keithley_6430
 
@@ -63,7 +65,7 @@ class Meter(ABC):
         self.meter = None
 
     @abstractmethod
-    def setup(self, *vargs, **kwargs):
+    def setup(self, function: Literal["sense", "source"], *vargs, **kwargs):
         pass
 
     def info(self, *, sync=True):
@@ -153,6 +155,8 @@ class SourceMeter(Meter):
 
         curr_val = self.get_output_status()[0]
         if interval is None:
+            if curr_val == value:
+                return
             arr = np.linspace(curr_val, value, 100)
         elif isinstance(interval, (float, str)):
             interval = convert_unit(interval, "")[0]
@@ -224,12 +228,13 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
                                "low_grounded": self.meter.output_low_grounded,
                                })
 
-    def setup(self, mode: Literal["ac", "dc"] = "ac", *, offset=0, source_auto_range=True,
+    def setup(self, function: Literal["source"] = "source", mode: Literal["ac", "dc"] = "ac", *, offset=0, source_auto_range=True,
               low_grounded=True, wave_function="sine") -> None:
         """
         set up the Keithley 6221 instruments, overwrite the specific settings here, other settings will all be
         reserved. Note that the waveform will not begin here
         """
+        assert function == "source", "6221 is a source meter, so the function should be source"
         source_6221 = self.meter
         # first must close the output to do setup
         self.output_switch("off")
@@ -256,6 +261,9 @@ class Wrapper6221(ACSourceMeter, DCSourceMeter):
         switch the output on or off
         """
         switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
+
+        if self.info_dict["output_status"] == switch:
+            return
 
         if switch:
             if self.info_dict["ac_dc"] == "ac":
@@ -400,7 +408,7 @@ class Wrapper2182(Meter):
                           "channel": 1,
                           "sense_type": "volt"}
 
-    def setup(self, *, channel: Literal[0, 1, 2] = 1) -> None:
+    def setup(self, function: Literal["sense"] = "sense", *, channel: Literal[0, 1, 2] = 1) -> None:
         self.meter.reset()
         self.meter.active_channel = channel
         self.meter.channel_function = "voltage"
@@ -439,13 +447,17 @@ class Wrapper6500(Meter):
                           "auto_zero": True,
                           "terminal": "front"}
 
-    def setup(self) -> None:
+    def setup(self, function: Literal["source", "sense"]) -> None:
         """default to measuring voltage"""
         self.meter.write("*RST")
         self.meter.auto_range()
-        self.meter.write(":SENS:VOLT:INP AUTO")  # auto impedance
-        self.meter.autozero_enabled = True
-        self.meter.enable_filter("volt", "repeat", 10)
+        if function == "sense":
+            self.meter.write(":SENS:VOLT:INP AUTO")  # auto impedance
+            self.meter.enable_filter("volt", "repeat", 10)
+        elif function == "source":
+            self.meter.autozero_enabled = True
+        else:
+            raise ValueError("function should be either source or sense")
 
     def info_sync(self):
         """
@@ -511,29 +523,34 @@ class WrapperSR830(ACSourceMeter):
                                "reserve": self.meter.reserve,
                                "filter_synchronous": self.meter.filter_synchronous})
 
-    def setup(self, *, filter_slope=24, time_constant=0.3, input_config="A - B",
-              input_coupling="AC", input_grounding="Float", sine_voltage=0,
+    def setup(self, function: Literal["source", "sense"] = "sense", *, filter_slope=24, time_constant=0.3, input_config="A - B",
+              input_coupling="AC", input_grounding="Float", sine_voltage: float = 0,
               input_notch_config="None", reference_source="External",
               reserve="High Reserve", filter_synchronous=False) -> None:
         """
         setup the SR830 instruments using pre-stored setups here, this function will not fully reset the instruments,
         only overwrite the specific settings here, other settings will all be reserved
         """
-        self.meter.filter_slope = filter_slope
-        self.meter.time_constant = time_constant
-        self.meter.input_config = input_config
-        self.meter.input_coupling = input_coupling
-        self.meter.input_grounding = input_grounding
-        self.meter.sine_voltage = sine_voltage
-        self.meter.input_notch_config = input_notch_config
-        self.meter.reference_source = reference_source
-        self.meter.reserve = reserve
-        self.meter.filter_synchronous = filter_synchronous
-        self.info_dict.update({"filter_slope": filter_slope, "time_constant": time_constant,
-                               "input_config": input_config, "input_coupling": input_coupling,
-                               "input_grounding": input_grounding, "sine_voltage": sine_voltage,
-                               "input_notch_config": input_notch_config, "reference_source": reference_source,
-                               "reserve": reserve, "filter_synchronous": filter_synchronous})
+        if function == "sense":
+            self.meter.filter_slope = filter_slope
+            self.meter.time_constant = time_constant
+            self.meter.input_config = input_config
+            self.meter.input_coupling = input_coupling
+            self.meter.input_grounding = input_grounding
+            self.meter.input_notch_config = input_notch_config
+            self.meter.reference_source = reference_source
+            self.meter.reserve = reserve
+            self.meter.filter_synchronous = filter_synchronous
+            self.info_dict.update({"filter_slope": filter_slope, "time_constant": time_constant,
+                                   "input_config": input_config, "input_coupling": input_coupling,
+                                   "input_grounding": input_grounding,
+                                   "input_notch_config": input_notch_config, "reference_source": reference_source,
+                                   "reserve": reserve, "filter_synchronous": filter_synchronous})
+        elif function == "source":
+            self.meter.sine_voltage = sine_voltage
+            self.info_dict.update({"sine_voltage": sine_voltage})
+        else:
+            raise ValueError("function should be either source or sense")
 
     def reference_set(self, *, freq: float | str = None, source: Literal["Internal", "External"] = "Internal",
                       trigger: Literal["SINE", "POS EDGE", "NEG EDGE"] = "SINE", harmonic: int = 1):
@@ -618,14 +635,21 @@ class Wrapper6430(DCSourceMeter):
             "autozero": self.meter.autozero(),
         })
 
-    def setup(self, *, auto_zero: str = "on"):
-        self.meter.reset()
-        self.meter.output_enabled(False)
-        self.meter.autozero(auto_zero)
-        self.meter.sense_autorange(True)
+    def setup(self, function: Literal["sense", "source"] = "sense", *, auto_zero: str = "on"):
+        if function == "source":
+            self.meter.reset()
+            self.meter.output_enabled(False)
+            self.meter.autozero(auto_zero)
+        elif function == "sense":
+            self.meter.sense_autorange(True)
+        else:
+            raise ValueError("function should be either source or sense")
         self.info_sync()
 
     def sense(self, type_str: Literal["curr", "volt", "resist"]) -> float:
+        if self.info_dict["output_status"] == False:
+            self.output_switch("on")
+
         if type_str == "curr":
             self.meter.sense_mode("CURR:DC")
             return self.meter.sense_current()
@@ -729,7 +753,7 @@ class Wrapper2400(DCSourceMeter):
             "sense_type": self.meter.sense().lower(),
         })
 
-    def setup(self):
+    def setup(self, function: Literal["sense", "source"] = "sense"):
         self.info_sync()
 
     def sense(self, type_str: Literal["curr", "volt", "resist"]) -> float:
@@ -762,6 +786,8 @@ class Wrapper2400(DCSourceMeter):
 
     def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
         switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
+        if self.info_dict["output_status"] == switch:
+            return
         if not switch:
             self.uni_output(0, type_str=self.info_dict["output_type"])
         self.meter.output(switch)
@@ -842,7 +868,7 @@ class Wrapper2450(DCSourceMeter):
             "sense_autozero": self.meter.sense.auto_zero_enabled(),
         })
 
-    def setup(self):
+    def setup(self, function: Literal["sense", "source"] = "sense"):
         self.meter.reset()
         self.info_sync()
         self.meter.terminals("front")
@@ -878,6 +904,8 @@ class Wrapper2450(DCSourceMeter):
 
     def output_switch(self, switch: bool | Literal["on", "off", "ON", "OFF"]):
         switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
+        if self.info_dict["output_status"] == switch:
+            return
         if not switch:
             self.uni_output(0, type_str=self.info_dict["output_type"])
         self.meter.output_enabled(switch)
@@ -936,12 +964,170 @@ class Wrapper2450(DCSourceMeter):
 
 
 """
+Wrappers for magnets are following
+"""
+
+
+class Magnet(ABC):
+    @abstractmethod
+    def __init__(self, address: str):
+        pass
+
+    @property
+    @abstractmethod
+    def field(self) -> float | tuple[float]:
+        pass
+
+    @property
+    @abstractmethod
+    def field_set(self):
+        pass
+
+    @field_set.setter
+    @abstractmethod
+    def field_set(self, field: float | tuple[float]):
+        pass
+
+    @abstractmethod
+    def ramp_to_field(self, field: float, *, rate: float, stability: float, check_interval: float):
+        pass
+
+    def if_reach_target(self, tolerance: float = 3E-3):
+        """
+        check if the magnet has reached the target field
+
+        Args:
+            tolerance (float): the tolerance of the field (T)
+        """
+        return abs(self.field - self.field_set) < tolerance
+
+
+class WrapperIPS(Magnet):
+    """
+    Wrapper for MercuryIPS (only z axis magnetic field is considered)
+    """
+    def __init__(self, address: str = "TCPIP0::10.97.24.237::7020::SOCKET",
+                 if_print: bool = False, limit_sphere: float = 11) -> None:
+        """
+        load Mercury iPS instrument according to the address, store it in self.instrs["ips"]
+
+        Args:
+            address (str): the address of the instrument
+            if_print (bool): whether to print the snapshot of the instrument
+            limit_sphere (float): the limit of the field
+        """
+        self.ips = OxfordMercuryiPS("mips", address)
+        if if_print:
+            self.ips.print_readable_snapshot(update=True)
+
+        def spherical_limit(x, y, z) -> bool:
+            return np.sqrt(x ** 2 + y ** 2 + z ** 2) <= limit_sphere
+
+        self.ips.set_new_field_limits(spherical_limit)
+
+    @property
+    def field(self) -> float | tuple[float]:
+        """
+        return the current field of the magnet (only z direction considered)
+        """
+        return self.ips.z_measured()
+
+    @property
+    def field_set(self) -> float | tuple[float]:
+        """
+        set the target field (only z direction considered)
+        """
+        return self.ips.z_target()
+
+    @field_set.setter
+    def field_set(self, field: float | tuple[float]) -> None:
+        """
+        set the target field (only z direction considered)
+        """
+        assert isinstance(field, (float, int, tuple, list)), "The field should be a float or a tuple of 3 floats"
+        fieldz_target = field if isinstance(field, (float, int)) else field[2]
+        self.ips.z_target(fieldz_target)
+
+    def sw_heater(self, switch: Optional[bool | Literal["on", "off", "ON", "OFF"]] = "on") -> Optional[bool]:
+        """
+        switch the heater of the magnet
+        """
+        if switch is not None:
+            switch = switch_dict.get(switch, False) if isinstance(switch, str) else switch
+            self.ips.sw_heater(switch)
+            print("Heater switched", "on" if switch else "off")
+        else:
+            match self.ips.sw_heater():
+                case "ON" | "on" | True:
+                    return True
+                case "OFF" | "off" | False:
+                    return False
+                case _:
+                    raise ValueError("The heater status is not recognized")
+
+    def ramp_to_field(self, field: float | int | tuple[float] | list[float], *,
+                      rate: tuple[float] = (0.00333,) * 3, wait: bool = True,
+                      tolerance: float = 3e-3) -> None:
+        """
+        ramp the magnetic field to the target value with the rate, current the field is only in Z direction limited by the actual instrument setting
+        (currently only B_z can be ramped)
+
+        Args:
+            field (tuple[float]): the target field coor
+            rate (float): the rate of the field change (T/s)
+            wait (bool): whether to wait for the ramping to finish
+            tolerance (float): the tolerance of the field (T)
+        """
+        if not self.sw_heater():
+            self.sw_heater("on")
+            time.sleep(330)
+        else:
+            pass
+
+        if abs(self.field_set - field) < tolerance:
+            return
+        if max(rate) * 60 > 0.2:
+            raise ValueError("The rate is too high, the maximum rate is 0.2 T/min")
+        #self.ips.GRPX.field_ramp_rate(rate[0])
+        #self.ips.GRPY.field_ramp_rate(rate[1])
+        self.ips.GRPZ.field_ramp_rate(rate[2])
+        # no x and y field for now (see the setter method for details)
+        self.field_set = field
+
+        self.ips.ramp(mode="simul")
+        if wait:
+            # the is_ramping() method is not working properly, so we use the following method to wait for the ramping
+            # to finish
+            time_arr = [0]
+            field_arr = [self.field]
+            count = 0
+            step_count = 1
+            stability_counter = 13  # [s]
+            while count < stability_counter:
+                time_arr.append(step_count)
+                field_arr.append(self.field)
+                if self.if_reach_target(tolerance):
+                    count += 1
+                else:
+                    count = 0
+                print_progress_bar(count, stability_counter, prefix="Stablizing",
+                                   suffix=f"B: {self.field} T")
+                time.sleep(1)
+                step_count += 1
+            print("ramping finished")
+
+
+"""
 Wrappers for ITC are following
 """
 
 
-class ITC(ABC, DataPlot):
+class ITC(ABC):
     # parent class to incorporate both two ITCs
+    @abstractmethod
+    def __init__(self, address: str):
+        pass
+
     @property
     @abstractmethod
     def temperature(self):
@@ -991,16 +1177,18 @@ class ITC(ABC, DataPlot):
         """
         pass
 
-    def wait_for_temperature(self, temp, *, if_plot=False, delta=0.01, check_interval=1, stability_counter=120,
+    def wait_for_temperature(self, temp, *, delta=0.01, check_interval=1, stability_counter=120,
                              thermalize_counter=120):
         """
         wait for the temperature to stablize for a certain time length
 
-        Args: temp (float): the target temperature delta (float): the temperature difference to consider the
-        temperature stablized check_interval (int,[s]): the interval to check the temperature stability_counter (
-        int): the number of times the temperature is within the delta range to consider the temperature stablized
-        thermalize_counter (int): the number of times to thermalize the sample if_plot (bool): whether to plot the
-        temperature change
+        Args:
+            temp (float): the target temperature
+            delta (float): the temperature difference to consider the temperature stablized
+            check_interval (int,[s]): the interval to check the temperature
+            stability_counter (int): the number of times the temperature is within the delta range
+                to consider the temperature stablized
+            thermalize_counter (int): the number of times to thermalize the sample
         """
 
         def tolerance_T(T: float):
@@ -1023,11 +1211,6 @@ class ITC(ABC, DataPlot):
         else:
             trend = "down"
 
-        if if_plot:
-            self.live_plot_init(1, 1, 1, 600, 1400, titles=[["T ramping"]],
-                                axes_labels=[[[r"Time (s)", r"T (K)"]]])
-            t_arr = [0]
-            T_arr = [self.temperature]
         i = 0
         while i < stability_counter:
             self.correction_ramping(self.temperature, trend)
@@ -1035,10 +1218,6 @@ class ITC(ABC, DataPlot):
                 i += 1
             elif i >= 5:
                 i -= 5
-            if if_plot:
-                t_arr.append(t_arr[-1] + check_interval)
-                T_arr.append(self.temperature)
-                self.live_plot_update(0, 0, 0, t_arr, T_arr)
             print_progress_bar(i, stability_counter, prefix="Stablizing",
                                suffix=f"Temperature: {self.temperature:.2f} K")
             time.sleep(check_interval)
@@ -1046,15 +1225,11 @@ class ITC(ABC, DataPlot):
         for i in range(thermalize_counter):
             print_progress_bar(i + 1, thermalize_counter, prefix="Thermalizing",
                                suffix=f"Temperature: {self.temperature:.2f} K")
-            if if_plot:
-                t_arr.append(t_arr[-1] + check_interval)
-                T_arr.append(self.temperature)
-                self.live_plot_update(0, 0, 0, t_arr, T_arr)
             time.sleep(check_interval)
         print("Thermalizing finished")
 
     def ramp_to_temperature(self, temp, *, delta=0.01, check_interval=1, stability_counter=60, thermalize_counter=60,
-                            pid: dict = None, ramp_rate=None, wait=True, if_plot=False):
+                            pid: dict = None, ramp_rate=None, wait=True):
         """ramp temperature to the target value (not necessary sample temperature)"""
         self.temperature_set = temp
         if pid is not None:
@@ -1062,7 +1237,7 @@ class ITC(ABC, DataPlot):
         if wait:
             self.wait_for_temperature(temp, delta=delta, check_interval=check_interval,
                                       stability_counter=stability_counter,
-                                      thermalize_counter=thermalize_counter, if_plot=if_plot)
+                                      thermalize_counter=thermalize_counter)
 
     @staticmethod
     def dynamic_delta(temp, delta_lowt) -> float:
@@ -1078,7 +1253,6 @@ class ITC(ABC, DataPlot):
 
 class ITCMercury(ITC):
     def __init__(self, address="TCPIP0::10.97.27.13::7020::SOCKET"):
-        DataPlot.load_settings(False, False)
         self.mercury = MercuryITC("mercury_itc", address)
 
     @property
@@ -1119,11 +1293,11 @@ class ITCMercury(ITC):
     def temperature(self):
         return self.mercury.probe_temp()
 
-    def set_temperature(self, temp, vti_temp=None):
+    def set_temperature(self, temp, vti_diff=None):
         """set the target temperature for sample"""
         self.mercury.temp_setpoint(temp)
-        if vti_temp is not None:
-            self.mercury.vti_temp_setpoint(vti_temp)
+        if vti_diff is not None:
+            self.mercury.vti_temp_setpoint(temp-vti_diff)
         else:
             self.mercury.vti_temp_setpoint(self.mercury.calculate_vti_temp(temp))
 
@@ -1143,13 +1317,20 @@ class ITCMercury(ITC):
         self.mercury.vti_temp_setpoint(temp)
 
     def ramp_to_temperature(self, temp, *, delta=0.01, check_interval=1, stability_counter=120, thermalize_counter=120,
-                            pid=None, ramp_rate=None, wait=True, if_plot=False):
-        """ramp temperature to the target value (not necessary sample temperature) Args: temp (float): the target
-        temperature delta (float): the temperature difference to consider the temperature stablized check_interval (
-        int,[s]): the interval to check the temperature stability_counter (int): the number of times the temperature
-        is within the delta range to consider the temperature stablized thermalize_counter (int): the number of times
-        to thermalize the sample pid (Dict): a dictionary as {"P": float, "I": float, "D": float} ramp_rate (float,
-        [K/min]): the rate to ramp the temperature
+                            pid=None, ramp_rate=None, wait=True, if_plot=False, vti_diff: Optional[float] = 5):
+        """ramp temperature to the target value (not necessary sample temperature)
+
+        Args:
+            temp (float): the target temperature
+            delta (float): the temperature difference to consider the temperature stablized
+            check_interval (int,[s]): the interval to check the temperature
+            stability_counter (int): the number of times the temperature is within the delta range to consider the temperature stablized
+            thermalize_counter (int): the number of times to thermalize the sample
+            pid (Dict): a dictionary as {"P": float, "I": float, "D": float}
+            ramp_rate (float, [K/min]): the rate to ramp the temperature
+            wait (bool): whether to wait for the ramping to finish
+            if_plot (bool): whether to plot the temperature during the ramping
+            vti_diff (float, None to ignore VTI): the difference between the sample temperature and the VTI temperature
         """
         self.temperature_set = temp
         if pid is not None:
